@@ -22,7 +22,7 @@ public class PromptGPS extends DialogFragment {
                })
                .setNegativeButton(R.string.cancel, new DialogInterface.OnClickListener() {
                    public void onClick(DialogInterface dialog, int id) {
-                       // User cancelled the dialog
+                       // User cancelled the dialog 
                    }
                });
         // Create the AlertDialog object and return it
