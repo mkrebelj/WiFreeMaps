@@ -3,18 +3,34 @@ package com.wifreemaps;
 import java.util.List;
 
 import com.google.android.gms.common.GooglePlayServicesUtil;
+import com.google.android.gms.maps.CameraUpdateFactory;
 import com.google.android.gms.maps.GoogleMap;
 import com.google.android.gms.maps.MapFragment;
+import com.google.android.gms.maps.model.BitmapDescriptor;
+import com.google.android.gms.maps.model.BitmapDescriptorFactory;
+import com.google.android.gms.maps.model.GroundOverlayOptions;
 import com.google.android.gms.maps.model.LatLng;
 import com.google.android.gms.maps.model.MarkerOptions;
 
 
 
 
+import android.R.drawable;
 import android.content.BroadcastReceiver;
 import android.content.Context;
 import android.content.Intent;
 import android.content.IntentFilter;
+import android.graphics.Bitmap;
+import android.graphics.Bitmap.Config;
+import android.graphics.BitmapFactory;
+import android.graphics.Color;
+import android.graphics.ColorFilter;
+import android.graphics.ColorMatrix;
+import android.graphics.ColorMatrixColorFilter;
+import android.graphics.Paint;
+import android.graphics.PorterDuff;
+import android.graphics.drawable.BitmapDrawable;
+import android.graphics.drawable.Drawable;
 import android.location.LocationManager;
 import android.net.wifi.ScanResult;
 import android.net.wifi.WifiManager;
@@ -75,6 +91,26 @@ public class MainActivity extends FragmentActivity {
         	popupGPS.show(getFragmentManager(),"popup GPS");
         }
         
+        //ADD GROUND OVERLAY which represents wifi network
+        Bitmap radiusImageSource=BitmapFactory.decodeResource(getResources(), R.drawable.radius);
+        //ADD SOME COLOR 
+        radiusImageSource = changeImageColor(radiusImageSource,Color.GREEN);
+        
+        
+        BitmapDescriptor radiusImage=BitmapDescriptorFactory.fromBitmap(radiusImageSource);
+        
+       
+        
+        // IJS coordinates 46.042931, 14.487516
+        LatLng IJSLocation = new LatLng(46.042931, 14.487516);
+        GroundOverlayOptions newarkMap = new GroundOverlayOptions()
+        .image(radiusImage)
+        .position(IJSLocation, 5f, 5f) //Na tem mestu poraèunati natanènost in sinhronizirati z velikostjo
+        .transparency(0.5f); //odvisno od kvalitete signala pobarvati med 0 in 1, izdelati naèin da se porazdeli na prostor- > (moc.signala/max.moc)/povrsina
+        mMap.addGroundOverlay(newarkMap);
+        
+        //now focus on that point
+        mMap.animateCamera(CameraUpdateFactory.newLatLngZoom(IJSLocation, 25.0f));
        
         receiverWifi = new WifiReceiver();
         registerReceiver(receiverWifi, new IntentFilter(WifiManager.SCAN_RESULTS_AVAILABLE_ACTION));
@@ -117,8 +153,32 @@ public class MainActivity extends FragmentActivity {
          }
      }
     
-    
-    
+    //Najdi nekaj bolj ucinkovitega za barvanje...
+     public static Bitmap changeImageColor(Bitmap srcBmp, int dstColor) {
+
+    	    int width = srcBmp.getWidth();
+    	    int height = srcBmp.getHeight();
+
+    	    float srcHSV[] = new float[3];
+    	    float dstHSV[] = new float[3];
+
+    	    Bitmap dstBitmap = Bitmap.createBitmap(width, height, Config.RGB_565);
+
+    	    for (int row = 0; row < height; row++) {
+    	        for (int col = 0; col < width; col++) {
+    	        	
+    	            Color.colorToHSV(srcBmp.getPixel(col, row), srcHSV);
+    	            Color.colorToHSV(dstColor, dstHSV);
+
+    	            // If it area to be painted set only value of original image
+    	            dstHSV[2] = srcHSV[2];  // value
+
+    	            dstBitmap.setPixel(col, row, Color.HSVToColor(dstHSV));
+    	        }
+    	    }
+
+    	    return dstBitmap;
+    	}
     	  
     	  
 }
