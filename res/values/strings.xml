@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+
+    <string name="app_name" translatable="false">WiFreeMaps</string>
+    <string name="action_settings">Settings</string>
+    <string name="title_activity_reciever">Reciever</string>
+    <string name="prompt_wifi">Wifi is not enabled. Enable WiFi?</string>
+	<string name="ok">OK</string>
+	<string name="cancel">Cancel</string>
+	<string name="prompt_gps">GPS sattelites not available. Enable?</string>
+</resources>
