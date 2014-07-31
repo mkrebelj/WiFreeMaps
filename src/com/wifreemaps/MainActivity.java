@@ -15,6 +15,7 @@ import com.google.android.gms.maps.model.MarkerOptions;
 
 
 
+import android.R.color;
 import android.R.drawable;
 import android.content.BroadcastReceiver;
 import android.content.Context;
@@ -23,11 +24,15 @@ import android.content.IntentFilter;
 import android.graphics.Bitmap;
 import android.graphics.Bitmap.Config;
 import android.graphics.BitmapFactory;
+import android.graphics.Canvas;
 import android.graphics.Color;
 import android.graphics.ColorFilter;
 import android.graphics.ColorMatrix;
 import android.graphics.ColorMatrixColorFilter;
+import android.graphics.LightingColorFilter;
+import android.graphics.Matrix;
 import android.graphics.Paint;
+import android.graphics.PaintFlagsDrawFilter;
 import android.graphics.PorterDuff;
 import android.graphics.drawable.BitmapDrawable;
 import android.graphics.drawable.Drawable;
@@ -35,6 +40,7 @@ import android.location.LocationManager;
 import android.net.wifi.ScanResult;
 import android.net.wifi.WifiManager;
 import android.os.Bundle;
+import android.os.Handler;
 
 
 
@@ -56,6 +62,12 @@ public class MainActivity extends FragmentActivity {
     PromptWifi popupWifi;
     PromptGPS popupGPS;
     LocationManager mainLocationManager;
+    
+    
+    //simulate adding new points with this handler
+    private Handler mHandler;
+    private int mInterval = 5000;
+    
 	
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -91,32 +103,67 @@ public class MainActivity extends FragmentActivity {
         	popupGPS.show(getFragmentManager(),"popup GPS");
         }
         
+        
+        
+        
+       
+        
+        
         //ADD GROUND OVERLAY which represents wifi network
-        Bitmap radiusImageSource=BitmapFactory.decodeResource(getResources(), R.drawable.radius);
-        //ADD SOME COLOR 
-        radiusImageSource = changeImageColor(radiusImageSource,Color.GREEN);
+        Bitmap radiusImageSource=BitmapFactory.decodeResource(getResources(), R.drawable.fadingout);
         
         
-        BitmapDescriptor radiusImage=BitmapDescriptorFactory.fromBitmap(radiusImageSource);
+        
+        //ADD SOME COLOR   
+        BitmapDescriptor radiusImage=GetCustomBitmapDescriptor(radiusImageSource, Color.CYAN);//BitmapDescriptorFactory.fromBitmap(radiusImageSource);
         
        
         
         // IJS coordinates 46.042931, 14.487516
         LatLng IJSLocation = new LatLng(46.042931, 14.487516);
-        GroundOverlayOptions newarkMap = new GroundOverlayOptions()
+        GroundOverlayOptions openWifiSpot = new GroundOverlayOptions()
         .image(radiusImage)
         .position(IJSLocation, 5f, 5f) //Na tem mestu poraèunati natanènost in sinhronizirati z velikostjo
         .transparency(0.5f); //odvisno od kvalitete signala pobarvati med 0 in 1, izdelati naèin da se porazdeli na prostor- > (moc.signala/max.moc)/povrsina
-        mMap.addGroundOverlay(newarkMap);
+        mMap.addGroundOverlay(openWifiSpot);
+        
+        //add other networks
+        float lat=46.042931f;
+        float lon=14.487516f;
+        GroundOverlayOptions[] allKnownPoints = new GroundOverlayOptions[20];
+        allKnownPoints = getAllKnownPoints(allKnownPoints.length,Color.GREEN,lat,lon);
+        for(int i= 0; i < allKnownPoints.length;i++)
+        {
+        	mMap.addGroundOverlay(allKnownPoints[i]);
+        }
+        
+        lat = 46.051351f;
+        lon = 14.487600f;
+        allKnownPoints = new GroundOverlayOptions[40];
+        allKnownPoints = getAllKnownPoints(allKnownPoints.length, Color.BLUE,lat,lon);
+        for(int i= 0; i < allKnownPoints.length;i++)
+        {
+        	mMap.addGroundOverlay(allKnownPoints[i]);
+        }
+        
         
         //now focus on that point
         mMap.animateCamera(CameraUpdateFactory.newLatLngZoom(IJSLocation, 25.0f));
        
+        
+        //simulate adding new point every second or so - not very good
+//        mHandler = new Handler();
+//        startRepeatingTask();
+        
+        //for debugging 
         receiverWifi = new WifiReceiver();
         registerReceiver(receiverWifi, new IntentFilter(WifiManager.SCAN_RESULTS_AVAILABLE_ACTION));
         mainWifi.startScan();
         mainText.setText("\nStarting Scan...\n");
         mainText.setMovementMethod(new ScrollingMovementMethod());
+        
+        
+        
      }
 
      public boolean onCreateOptionsMenu(Menu menu) {
@@ -153,32 +200,112 @@ public class MainActivity extends FragmentActivity {
          }
      }
     
-    //Najdi nekaj bolj ucinkovitega za barvanje...
-     public static Bitmap changeImageColor(Bitmap srcBmp, int dstColor) {
-
-    	    int width = srcBmp.getWidth();
-    	    int height = srcBmp.getHeight();
-
-    	    float srcHSV[] = new float[3];
-    	    float dstHSV[] = new float[3];
-
-    	    Bitmap dstBitmap = Bitmap.createBitmap(width, height, Config.RGB_565);
-
-    	    for (int row = 0; row < height; row++) {
-    	        for (int col = 0; col < width; col++) {
-    	        	
-    	            Color.colorToHSV(srcBmp.getPixel(col, row), srcHSV);
-    	            Color.colorToHSV(dstColor, dstHSV);
-
-    	            // If it area to be painted set only value of original image
-    	            dstHSV[2] = srcHSV[2];  // value
-
-    	            dstBitmap.setPixel(col, row, Color.HSVToColor(dstHSV));
-    	        }
-    	    }
-
-    	    return dstBitmap;
-    	}
+     
+     
+     private BitmapDescriptor GetCustomBitmapDescriptor (Bitmap basicBitmap, int wifiColor)
+     {
+    	 if(wifiColor == -1)
+    	 {
+    		 wifiColor = Color.RED;
+    	 }
+    	 Bitmap resultBitmap = basicBitmap.copy(Bitmap.Config.ARGB_8888, true);
+    	 Paint selectedPaint = new Paint();
+    	 //selectedPaint.setColor(Color.RED);
+    	 ColorFilter filter = new LightingColorFilter(wifiColor, 1);
+    	 Matrix matrix= new Matrix();
+    	 selectedPaint.setColorFilter(filter);
+    	 
+    	 Canvas canvas = new Canvas (resultBitmap);
+    	 
+    	 canvas.drawBitmap(resultBitmap, matrix, selectedPaint);
+    	 //canvas.drawCircle(resultBitmap.getWidth()/2, resultBitmap.getHeight()/2, 100f, selectedPaint);//(resultBitmap,2f,2f,selectedPaint);
+    	 
+    	 BitmapDescriptor icon = BitmapDescriptorFactory.fromBitmap(resultBitmap);
+    	 
+    	 return icon;
+    	
+    	 
+ 
+         
+     }
+     
+     
+     private GroundOverlayOptions[] getAllKnownPoints(int size, int wificolor, float GPSlat, float GPSlon){
+    	 GroundOverlayOptions[] result = new GroundOverlayOptions[size];
+    	 
+    	 
+    	 
+    	//ADD GROUND OVERLAY which represents wifi network
+         Bitmap radiusImageSource=BitmapFactory.decodeResource(getResources(), R.drawable.circles);
+         //ADD SOME COLOR   
+         BitmapDescriptor radiusImage=GetCustomBitmapDescriptor(radiusImageSource, wificolor);
+        
+         // IJS coordinates 46.042931, 14.487516
+         float lat=GPSlat;
+         float lon=GPSlon;
+         float addLat,addLon;
+         LatLng WifiLocation = null;
+         float wifiPower = 0.0f;
+         float gpsAccuracy= 0.0f;
+    	 
+    	 
+    	 //TODO: recover points from database in the future
+    	 for(int i=0; i < result.length; i++)
+    	 {
+    		 //read
+    		 if(Math.random() > 0.5)
+    			 addLat=(float)(Math.random()*0.0001);
+    		 else
+    			 addLat=(float) (Math.random()*0.0001)*-1;
+    		 if(Math.random() > 0.5)
+    			 addLon=(float)(Math.random()*0.0001);
+    		 else
+    			 addLon=(float)(Math.random()*0.0001)*-1;
+    		 
+    		 WifiLocation =  new LatLng(lat+addLat, lon+addLon);
+    		 gpsAccuracy = (float) (Math.random()*20)+1.0f;
+    		 wifiPower = 0.9f - (float) (Math.random() / gpsAccuracy); //1.0 means no signal at all, 0 means full power
+    		 //end read
+    		 
+    		 result[i] = new GroundOverlayOptions()
+             .image(radiusImage)
+             .position(WifiLocation, gpsAccuracy, gpsAccuracy) //Na tem mestu poraèunati natanènost in sinhronizirati z velikostjo
+             .transparency(wifiPower); //odvisno od kvalitete signala pobarvati med 0 in 1, izdelati naèin da se porazdeli na prostor- > (moc.signala/max.moc)/povrsina
+        	 
+    	 }
+    	 
+    	 return result;
+     }
+     
     	  
+     Runnable mStatusChecker = new Runnable() {
+    	    @Override 
+    	    public void run() {
+    	      addNewPoint(); //this function can change value of mInterval.
+    	      mHandler.postDelayed(mStatusChecker, mInterval);
+    	    }
+    	  };
+
+    	  void startRepeatingTask() {
+    	    mStatusChecker.run(); 
+    	  }
+
+    	  void stopRepeatingTask() {
+    	    mHandler.removeCallbacks(mStatusChecker);
+    	  }
+     
+    private void addNewPoint()
+    {
+    	
+        float lat=46.042931f;
+        float lon=14.487516f;
+        GroundOverlayOptions[] allKnownPoints = new GroundOverlayOptions[20];
+        allKnownPoints = getAllKnownPoints(allKnownPoints.length, Color.MAGENTA,lat,lon);
+        //System.out.println("Adding some data to map...");
+        for(int i= 0; i < allKnownPoints.length;i++)
+        {
+        	mMap.addGroundOverlay(allKnownPoints[i]);
+        }
+    }
     	  
 }
