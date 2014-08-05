@@ -162,6 +162,18 @@ public class MainActivity extends FragmentActivity {
         mainText.setText("\nStarting Scan...\n");
         mainText.setMovementMethod(new ScrollingMovementMethod());
         
+        //try with database
+        MySQLiteHelper db = new MySQLiteHelper(this);
+        
+        db.addNetwork(new OpenNetwork("bssid1", "network1", 2100, new LatLng(46.051470, 14.506019), 0.8f, 80.0f));
+        db.addNetwork(new OpenNetwork("bssid1", "network1", 2100, new LatLng(46.051460, 14.506029), 0.9f, 80.0f));
+        db.addNetwork(new OpenNetwork("bssid2", "network2", 2100, new LatLng(46.051560, 14.506089), 0.9f, 80.0f));
+        
+        List<OpenNetwork> network1= db.getNetworkPoints("bssid1");
+        
+        OpenNetwork delete = network1.get(0);
+        db.deleteEntireNetwork(delete);
+        
         
         
      }
