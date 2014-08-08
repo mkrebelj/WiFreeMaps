@@ -14,7 +14,7 @@ import android.database.sqlite.SQLiteOpenHelper;
 import android.util.Log;
 
 public class MySQLiteHelper extends SQLiteOpenHelper{
-	private static final int DATABASE_VERSION = 2;
+	private static final int DATABASE_VERSION = 6;
 	private static final String DATABASE_NAME = "OpenNetworkDB";
 	
 	
@@ -36,10 +36,12 @@ public class MySQLiteHelper extends SQLiteOpenHelper{
                 "location TEXT, "+
                 "gpsstrength TEXT, "+
                 "wifistrength TEXT, "+
-                "frequency TEXT )";
+                "frequency TEXT, "+
+                "livenet INTEGER)";
  
         // create books table
         db.execSQL(CREATE_OPENNETWORK_TABLE);
+        
 	}
 
 
@@ -68,8 +70,9 @@ public class MySQLiteHelper extends SQLiteOpenHelper{
 	private static final String KEY_GPSSTRENGTH = "gpsstrength";
 	private static final String KEY_WIFISTRENGTH = "wifistrength";
 	private static final String KEY_FREQUENCY = "frequency";
+	private static final String KEY_LIVENET = "livenet";
 	
-	private static final String[] COLUMNS = {KEY_ID, KEY_BSSID,KEY_SSID, KEY_COORDINATES, KEY_GPSSTRENGTH,KEY_WIFISTRENGTH,KEY_FREQUENCY};
+	private static final String[] COLUMNS = {KEY_ID, KEY_BSSID,KEY_SSID, KEY_COORDINATES, KEY_GPSSTRENGTH,KEY_WIFISTRENGTH,KEY_FREQUENCY,KEY_LIVENET};
 	
 	
 	
@@ -88,7 +91,7 @@ public class MySQLiteHelper extends SQLiteOpenHelper{
         values.put(KEY_GPSSTRENGTH, network.getGPSaccuracy()+""); //get accuracy
         values.put(KEY_WIFISTRENGTH, network.getWiFiStrengths()+""); //get wifi strength
         values.put(KEY_FREQUENCY, network.getWiFiFrequency()+""); //get wifi freqency-channel
-        
+        values.put(KEY_LIVENET, network.getIsLive()); //get info if wifi is connected to internet
  
         // 3. insert
         db.insert(TABLE_NETWORKS, // table
@@ -109,12 +112,12 @@ public class MySQLiteHelper extends SQLiteOpenHelper{
 	       SQLiteDatabase db = this.getWritableDatabase();
 	       Cursor cursor = db.rawQuery(query, null);
 		
-	    // 3. go over each row, build book and add it to list
+	    // 3. go over each row, build network and add it to list
 	       OpenNetwork network = null;
 	       String bssid, ssid;
 	       float wifiStrength,gpsaccuracy;
 	       double lat,lng;
-	       int freq=0;
+	       int freq=0,live=0;
 	       LatLng gpsLocation=new LatLng(0, 0);
 	       if (cursor.moveToFirst()) {
 	           do {
@@ -126,9 +129,10 @@ public class MySQLiteHelper extends SQLiteOpenHelper{
 	        	   freq=Integer.parseInt(cursor.getString(6));
 	        	   lat=Double.parseDouble(cursor.getString(3).split(";")[0]);
 	        	   lng=Double.parseDouble(cursor.getString(3).split(";")[1]);
+	        	   live=cursor.getInt(7);
 	        	   gpsLocation=new LatLng(lat, lng);
 	        	   
-	               network = new OpenNetwork(bssid, ssid, freq, gpsLocation, gpsaccuracy, wifiStrength);
+	               network = new OpenNetwork(bssid, ssid, freq, gpsLocation, gpsaccuracy, wifiStrength,live);
 	               
 	 
 	               // Add to network list
@@ -144,6 +148,49 @@ public class MySQLiteHelper extends SQLiteOpenHelper{
 		
 	}
 	
+	public List<OpenNetwork> getAllNetworkPoints(){
+		List<OpenNetwork> networkPoints = new ArrayList<OpenNetwork>();
+		// 1. build query
+		String query = "SELECT * FROM "+TABLE_NETWORKS;
+		
+		// 2. get reference to writable DB
+	       SQLiteDatabase db = this.getWritableDatabase();
+	       Cursor cursor = db.rawQuery(query, null);
+		
+	    // 3. go over each row, build network and add it to list
+	       OpenNetwork network = null;
+	       String bssid, ssid;
+	       float wifiStrength,gpsaccuracy;
+	       double lat,lng;
+	       int freq=0,live=0;
+	       LatLng gpsLocation=new LatLng(0, 0);
+	       if (cursor.moveToFirst()) {
+	           do {
+//	        	   COLUMNS = {KEY_ID, KEY_BSSID,KEY_SSID, KEY_COORDINATES, KEY_GPSSTRENGTH,KEY_WIFISTRENGTH,KEY_FREQUENCY};
+	        	   bssid=cursor.getString(1);
+	        	   ssid=cursor.getString(2);
+	        	   wifiStrength=Float.parseFloat(cursor.getString(5)+"");
+	        	   gpsaccuracy=Float.parseFloat(cursor.getString(4)+"");
+	        	   freq=Integer.parseInt(cursor.getString(6));
+	        	   lat=Double.parseDouble(cursor.getString(3).split(";")[0]);
+	        	   lng=Double.parseDouble(cursor.getString(3).split(";")[1]);
+	        	   live=cursor.getInt(7);
+	        	   gpsLocation=new LatLng(lat, lng);
+	        	   
+	               network = new OpenNetwork(bssid, ssid, freq, gpsLocation, gpsaccuracy, wifiStrength,live);
+	               
+	 
+	               // Add to network list
+	               networkPoints.add(network);
+	           } while (cursor.moveToNext());
+	       }
+	 
+	       Log.d("getNetworkPoints()", networkPoints.toString());
+	       
+	       db.close();
+	       // return books
+	       return networkPoints;
+	}
 	
 	public int updateNetwork(OpenNetwork network){
 		
@@ -170,7 +217,7 @@ public class MySQLiteHelper extends SQLiteOpenHelper{
 		        values.put(KEY_GPSSTRENGTH, network.getGPSaccuracy()); //get accuracy
 		        values.put(KEY_WIFISTRENGTH, network.getWiFiStrengths()); //get wifi strength
 		        values.put(KEY_FREQUENCY, network.getWiFiFrequency()); //get wifi freqency-channel
-			    
+			    values.put(KEY_LIVENET, network.getIsLive()+""); //get info if wifi is connected to internet
 			    
 			    db.update(TABLE_NETWORKS, //table
 			            values, // column/value
@@ -233,6 +280,8 @@ public class MySQLiteHelper extends SQLiteOpenHelper{
 					worstSignalID= cursor.getInt(0);
 				}
 			}while(cursor.moveToNext());
+		
+		db.close();
 		
 		Log.d("findWorstPoint id=", worstSignalID+"");
 		

@@ -8,7 +8,7 @@ import com.google.android.gms.maps.model.LatLng;
 public class OpenNetwork {
 	private String BSSID;
 	private String SSID;
-	private int wifiFrequency;
+	private int wifiFrequency,isLive;
 	
 	private LatLng GPSLocation;
 	private float GPSAccuracy;
@@ -20,7 +20,7 @@ public class OpenNetwork {
 		
 	}
 	
-	public OpenNetwork(String bssid, String ssid, int freq, LatLng coordinates, float accuracy, float signalStrength)
+	public OpenNetwork(String bssid, String ssid, int freq, LatLng coordinates, float accuracy, float signalStrength, int isLive)
 	{
 		super();
 		this.BSSID=bssid;
@@ -29,6 +29,7 @@ public class OpenNetwork {
 		this.GPSLocation = coordinates;
 		this.GPSAccuracy = accuracy;
 		this.wifiStrength = signalStrength;
+		this.isLive = isLive;
 	}
 	
 	
@@ -51,6 +52,15 @@ public class OpenNetwork {
 	{
 		String latLan = this.GPSLocation.latitude +";"+this.GPSLocation.longitude;
 		return latLan;
+	}
+	public float getLng(){
+		return (float)this.GPSLocation.longitude;
+	}
+	public float getLat(){
+		return (float)this.GPSLocation.latitude;
+	}
+	public LatLng getLocationAsCoordinate(){
+		return this.GPSLocation;
 	}
 	public float getGPSaccuracy()
 	{
@@ -99,5 +109,10 @@ public class OpenNetwork {
         return "Network [BSSID=" + BSSID + ", SSID=" + SSID + ", Coordinates=" + GPSLocation + ", Accuracy=" + GPSAccuracy + ", WiFiStrength=" + wifiStrength 
                 + "]";
     }
+
+	public int getIsLive() {
+		return this.isLive;
+		
+	}
 	
 }
