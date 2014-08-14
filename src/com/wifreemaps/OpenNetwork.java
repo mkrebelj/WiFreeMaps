@@ -1,18 +1,16 @@
 package com.wifreemaps;
 
-import java.util.ArrayList;
-import java.util.List;
+
 
 import com.google.android.gms.maps.model.LatLng;
 
 public class OpenNetwork {
 	private String BSSID;
 	private String SSID;
-	private int wifiFrequency,isLive;
+	private String cityName;
+	private int wifiFrequency,isReachable; //isReachable: 0=no, 1=yes; 2=unknown
 	
-	private LatLng GPSLocation;
-	private float GPSAccuracy;
-	private float wifiStrength;
+	private LatLng approxGPSLocation;
 	
 	
 	
@@ -20,16 +18,15 @@ public class OpenNetwork {
 		
 	}
 	
-	public OpenNetwork(String bssid, String ssid, int freq, LatLng coordinates, float accuracy, float signalStrength, int isLive)
+	public OpenNetwork(String bssid, String ssid, String cityname,int freq, LatLng approxCoordinates, int reachable)
 	{
 		super();
 		this.BSSID=bssid;
 		this.SSID=ssid;
+		this.cityName = cityname;
 		this.wifiFrequency=freq;
-		this.GPSLocation = coordinates;
-		this.GPSAccuracy = accuracy;
-		this.wifiStrength = signalStrength;
-		this.isLive = isLive;
+		this.approxGPSLocation = approxCoordinates;
+		this.isReachable = reachable;
 	}
 	
 	
@@ -48,28 +45,44 @@ public class OpenNetwork {
 	public int getWiFiFrequency(){
 		return this.wifiFrequency;
 	}
-	public String getLocations()
+	public String getLocation()
 	{
-		String latLan = this.GPSLocation.latitude +";"+this.GPSLocation.longitude;
+		String latLan = this.approxGPSLocation.latitude +";"+this.approxGPSLocation.longitude;
 		return latLan;
 	}
 	public float getLng(){
-		return (float)this.GPSLocation.longitude;
+		return (float)this.approxGPSLocation.longitude;
 	}
 	public float getLat(){
-		return (float)this.GPSLocation.latitude;
+		return (float)this.approxGPSLocation.latitude;
 	}
-	public LatLng getLocationAsCoordinate(){
-		return this.GPSLocation;
-	}
-	public float getGPSaccuracy()
+	public LatLng getLocationAsCoordinate()
 	{
-		return this.GPSAccuracy;
+		return this.approxGPSLocation;
 	}
-	public float getWiFiStrengths()
+	public String getCityName()
 	{
-		return this.wifiStrength;
+		return this.cityName;
 	}
+	
+	public int getFrequency()
+	{
+		return this.wifiFrequency;
+	}
+	public int isNetworkReachable()
+	{
+		return this.isReachable;
+	}
+	
+	public void setNetworkReachable(int state){
+		this.isReachable=state;
+	}
+	
+	public void setCityName(String cityname)
+	{
+		this.cityName = cityname;
+	}
+	
 	
 	public void setBSSID(String bssid)
 	{
@@ -90,29 +103,25 @@ public class OpenNetwork {
 			lat=Double.parseDouble(latLng.split(";")[0]);
 			lng=Double.parseDouble(latLng.split(";")[1]);
 			LatLng gpsLocation= new LatLng(lat,lng);
-			this.GPSLocation=gpsLocation;
+			this.approxGPSLocation=gpsLocation;
 		} catch (NumberFormatException e) {
 			// TODO Auto-generated catch block
 			e.printStackTrace();
 		}
 	}
-	public void setGPSaccuracy(float accuracy)
+	
+	public void setGPSCoordinates(LatLng coordinates)
 	{
-		this.GPSAccuracy = accuracy;
-	}
-	public void setWiFiStrength(float signalStrength)
-	{
-		this.wifiStrength = signalStrength;
+		this.approxGPSLocation=coordinates;
 	}
 	
+	
+	@Override
 	public String toString() {
-        return "Network [BSSID=" + BSSID + ", SSID=" + SSID + ", Coordinates=" + GPSLocation + ", Accuracy=" + GPSAccuracy + ", WiFiStrength=" + wifiStrength 
+        return "Network [BSSID=" + BSSID + ", SSID=" + SSID + ", City=" + cityName +", Coordinates=" + approxGPSLocation + ", wwwReachable= "+ (isReachable == 0? "no":(isReachable == 1?"yes":"unknown")) 
                 + "]";
     }
 
-	public int getIsLive() {
-		return this.isLive;
-		
-	}
+
 	
 }

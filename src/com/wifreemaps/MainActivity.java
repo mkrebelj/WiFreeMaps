@@ -1,9 +1,10 @@
 package com.wifreemaps;
 
+import java.io.IOException;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Locale;
 
-import com.google.android.gms.common.GooglePlayServicesUtil;
 import com.google.android.gms.maps.CameraUpdateFactory;
 import com.google.android.gms.maps.GoogleMap;
 import com.google.android.gms.maps.GoogleMap.OnCameraChangeListener;
@@ -13,37 +14,32 @@ import com.google.android.gms.maps.model.BitmapDescriptorFactory;
 import com.google.android.gms.maps.model.CameraPosition;
 import com.google.android.gms.maps.model.GroundOverlayOptions;
 import com.google.android.gms.maps.model.LatLng;
-import com.google.android.gms.maps.model.MarkerOptions;
+import android.location.Address;
+import android.location.Criteria;
+import android.location.Geocoder;
+import android.location.Location;
+import android.location.LocationListener;
 
 
 
-
-import android.R.color;
-import android.R.drawable;
 import android.content.BroadcastReceiver;
 import android.content.Context;
 import android.content.Intent;
 import android.content.IntentFilter;
 import android.graphics.Bitmap;
-import android.graphics.Bitmap.Config;
 import android.graphics.BitmapFactory;
 import android.graphics.Canvas;
 import android.graphics.Color;
 import android.graphics.ColorFilter;
-import android.graphics.ColorMatrix;
-import android.graphics.ColorMatrixColorFilter;
 import android.graphics.LightingColorFilter;
 import android.graphics.Matrix;
 import android.graphics.Paint;
-import android.graphics.PaintFlagsDrawFilter;
-import android.graphics.PorterDuff;
-import android.graphics.drawable.BitmapDrawable;
-import android.graphics.drawable.Drawable;
 import android.location.LocationManager;
 import android.net.wifi.ScanResult;
 import android.net.wifi.WifiManager;
 import android.os.Bundle;
 import android.os.Handler;
+import android.os.Looper;
 
 
 
@@ -55,8 +51,8 @@ import android.view.MenuItem;
 import android.widget.TextView;
 
 public class MainActivity extends FragmentActivity {
-	private GoogleMap mMap = null;
-
+	private static GoogleMap mMap = null;
+	private static Handler handler = new Handler(Looper.getMainLooper());
 
 	TextView mainText;
 	WifiManager mainWifi;
@@ -67,8 +63,11 @@ public class MainActivity extends FragmentActivity {
 	PromptGPS popupGPS;
 	LocationManager mainLocationManager;
 	MySQLiteHelper db;
-	List<OpenNetwork> currentNetworkPoints;
-
+	private static DataHandler dataHandler;
+	private static int databaseState=0;
+	
+	List<OpenNetwork> currentNetworks;
+	List<NetworkPoint> networkPoints;
 
 	//simulate adding new points with this handler
 	private Handler mHandler;
@@ -132,6 +131,7 @@ public class MainActivity extends FragmentActivity {
 		});
 
 
+		
 
 		mainText = (TextView) findViewById(R.id.wifilist);
 
@@ -155,13 +155,40 @@ public class MainActivity extends FragmentActivity {
 
 
 
+		
+		//find current city and get data from database...
+		
+		
+		// The minimum time (in miliseconds) the system will wait until checking if the location changed
+		int minTime = 60000;
+		// The minimum distance (in meters) traveled until you will be notified
+		float minDistance = 15;
+		// Create a new instance of the location listener
+		MyLocationListener myLocListener = new MyLocationListener();
+		// Get the location manager from the system
+		LocationManager locationManager = (LocationManager) getSystemService(Context.LOCATION_SERVICE);
+		// Get the criteria you would like to use
+		Criteria criteria = new Criteria();
+		criteria.setPowerRequirement(Criteria.POWER_LOW);
+		criteria.setAccuracy(Criteria.ACCURACY_FINE);
+		criteria.setAltitudeRequired(false);
+		criteria.setBearingRequired(false);
+		criteria.setCostAllowed(true);
+		criteria.setSpeedRequired(false);
+		// Get the best provider from the criteria specified, and false to say it can turn the provider on if it isn't already
+		String bestProvider = locationManager.getBestProvider(criteria, false);
+		// Request location updates
+		locationManager.requestLocationUpdates(bestProvider, minTime, minDistance, myLocListener);
+		
+		
+		
 
 		//try with database
 		db = new MySQLiteHelper(this);
-
+		dataHandler = new DataHandler(db);
 
 		//ADD GROUND OVERLAY which represents wifi network
-		Bitmap radiusImageSource=BitmapFactory.decodeResource(getResources(), R.drawable.fadingout);
+//		Bitmap radiusImageSource=BitmapFactory.decodeResource(getResources(), R.drawable.fadingout);
 
 
 
@@ -170,66 +197,65 @@ public class MainActivity extends FragmentActivity {
 
 		//add something to database
 
-		addSamplePointsToDatabase();
+		if(db.isDBempty()){
+			//addSomeData();
+			handler.post(new Runnable(){
 
-		// IJS coordinates 46.042931, 14.487516
-//		LatLng IJSLocation = new LatLng(46.042931, 14.487516);
-//		GroundOverlayOptions openWifiSpot = new GroundOverlayOptions()
-//		.image(radiusImage)
-//		.position(IJSLocation, 5f, 5f) //Na tem mestu poraèunati natanènost in sinhronizirati z velikostjo
-//		.transparency(0.5f); //odvisno od kvalitete signala pobarvati med 0 in 1, izdelati naèin da se porazdeli na prostor- > (moc.signala/max.moc)/povrsina
-//		mMap.addGroundOverlay(openWifiSpot);
+				@Override
+				public void run() {
+					// TODO Auto-generated method stub
+					dataHandler.addSamplePointsToDatabase(getBaseContext());
+			    	databaseState=1;
+					
+				} 
+				   // your UI code here 
+				});
+		}
+		else
+			databaseState = 1;
 
-		//add other networks
-		//        float lat=46.042931f;
-		//        float lon=14.487516f;
-		//        GroundOverlayOptions[] allKnownPoints = new GroundOverlayOptions[20];
-		//        allKnownPoints = getAllKnownPoints(allKnownPoints.length,Color.GREEN,lat,lon);
-		//        for(int i= 0; i < allKnownPoints.length;i++)
-		//        {
-		//        	mMap.addGroundOverlay(allKnownPoints[i]);
-		//        }
-		//        
-		//        lat = 46.051351f;
-		//        lon = 14.487600f;
-		//        allKnownPoints = new GroundOverlayOptions[40];
-		//        allKnownPoints = getAllKnownPoints(allKnownPoints.length, Color.BLUE,lat,lon);
-		//        for(int i= 0; i < allKnownPoints.length;i++)
-		//        {
-		//        	mMap.addGroundOverlay(allKnownPoints[i]);
-		//        }
-		//        
-		//        int[] colors = {Color.BLACK,
-		//        		Color.CYAN,
-		//        		Color.MAGENTA,
-		//        		Color.WHITE,
-		//        		Color.YELLOW, 
-		//        		Color.argb(255, 255, 255, 0),
-		//        		Color.argb(255, 0, 255, 100),
-		//        		Color.argb(255, 100, 255, 5),
-		//        		Color.argb(255, 55, 25, 150),
-		//        		Color.argb(255, 75, 155, 10)};
-		//        for(int j=0; j < 10; j++)
-		//        {
-		//        	
-		//	        lat = 46.042931f + (float)(Math.random()*0.0011);
-		//	        lon = 14.487516f + (float)(Math.random()*0.0011);
-		//	        
-		//	        allKnownPoints = new GroundOverlayOptions[30];
-		//	        allKnownPoints = getAllKnownPoints(allKnownPoints.length, colors[j],lat,lon);
-		//	        for(int i= 0; i < allKnownPoints.length;i++)
-		//	        {
-		//	        	mMap.addGroundOverlay(allKnownPoints[i]);
-		//	        }
-		//        }
 
-		//now focus on average point
-		LatLng locationtocenter = findCenterPoint();
-		mMap.animateCamera(CameraUpdateFactory.newLatLngZoom(locationtocenter, 19.0f));
+		
 
 		//draw points on map
+		handler.post(new Runnable(){
 
-		updateMapWithPoints();
+			@Override
+			public void run() {
+				// TODO Auto-generated method stub
+				while (databaseState != 1)
+				{
+					try {
+						Thread.sleep(200);
+					} catch (InterruptedException e) {
+						// TODO Auto-generated catch block
+						e.printStackTrace();
+					}
+				}
+				
+				updateMapWithPoints();
+				handler.post(new Runnable(){
+
+					@Override
+					public void run() {
+						try {
+							Thread.sleep(500);
+						} catch (InterruptedException e) {
+							// TODO Auto-generated catch block
+							e.printStackTrace();
+						}
+						//now focus on average point
+						LatLng locationtocenter = findCenterPoint();
+						mMap.animateCamera(CameraUpdateFactory.newLatLngZoom(locationtocenter, 19.0f));
+				}
+				});
+				
+				
+			} 
+			   // your UI code here 
+			});
+		//updateMap(); //in seperate thread
+//		updateMapWithPoints();
 
 
 		//simulate adding new point every second or so - not very good
@@ -251,8 +277,15 @@ public class MainActivity extends FragmentActivity {
 
 	}
 
-	private void updateMapWithPoints() {
-		currentNetworkPoints = db.getAllNetworkPoints();
+	private boolean updateMapWithPoints() {
+		
+		
+		
+		
+		if(databaseState != 0) {
+		
+		
+		currentNetworks = db.getAllNetworks();
 		//List<OpenNetwork> currentNetworkPoints = new ArrayList<OpenNetwork>();
 		List<String> uniqueNetworks=new ArrayList<String>();
 		List<Integer> networkColors = new ArrayList<Integer>();
@@ -260,11 +293,11 @@ public class MainActivity extends FragmentActivity {
 		Bitmap radiusImageSource=BitmapFactory.decodeResource(getResources(), R.drawable.fadingout);
 		
 		
-		currentNetworkPoints = db.getAllNetworkPoints();
+		
 				
 		
 		//count different newtorks and mix some colors
-		for(OpenNetwork ntwk : currentNetworkPoints)
+		for(OpenNetwork ntwk : currentNetworks)
 		{
 			if(! uniqueNetworks.contains(ntwk.getBSSID()) )
 			{
@@ -281,67 +314,31 @@ public class MainActivity extends FragmentActivity {
 			BitmapDescriptor radiusImage=GetCustomBitmapDescriptor(radiusImageSource, networkColors.get(uniqueNetworks.indexOf(bssid)));
 
 			
-			currentNetworkPoints=db.getNetworkPoints(bssid);
-			for(OpenNetwork point: currentNetworkPoints)
+			db=new MySQLiteHelper(this);
+			networkPoints=db.getNetworkPoints(bssid);
+			
+			for(NetworkPoint point: networkPoints)
 			{
 				GroundOverlayOptions openWifiSpot = new GroundOverlayOptions()
 				.image(radiusImage)
-				.position(point.getLocationAsCoordinate(), point.getGPSaccuracy(), point.getGPSaccuracy()) //Na tem mestu poraèunati natanènost in sinhronizirati z velikostjo
-				.transparency(1.0f-point.getWiFiStrengths()/(float)Math.sqrt(point.getGPSaccuracy())); //odvisno od kvalitete signala pobarvati med 0 in 1, izdelati naèin da se porazdeli na prostor- > (moc.signala/max.moc)/povrsina
+				.position(point.getLocation(), (float)point.getGpsAccuracy(), (float)point.getGpsAccuracy()) //Na tem mestu poraèunati natanènost in sinhronizirati z velikostjo
+				.transparency(1.0f-(float)point.getQuality()); //odvisno od kvalitete signala pobarvati med 0 in 1, izdelati naèin da se porazdeli na prostor- > (moc.signala/max.moc)/povrsina
 				mMap.addGroundOverlay(openWifiSpot);
 			}
-			Log.v("WIFIADDED"," bssid:"+bssid);
+			//Log.v("WIFIADDED"," bssid:"+bssid);
 		}
 		
-		
-
-	}
-
-	private void addSamplePointsToDatabase() {
-		//only for debugging
-
-		//add 10 networks to database
-		String bssid,ssid;
-		int freq,alive,newpoints;
-		float startLat,startLng,latitude,longitude,accuracy,signal;
-		OpenNetwork toAdd;
-
-		for(int i = 0; i < 10; i++)
-		{
-			//for each add from 5 to 15 new points
-			bssid="bssid"+i+"sample";
-			ssid="network"+i+"name";
-			freq= i%3;//(int)(Math.random()*14);
-			alive=( i%4==3 ? 0:1 );
-			startLat =46.042931f +(float)(Math.random()*0.001);
-			startLng =14.487516f +(float)(Math.random()*0.001);
-			//signal -35dbm(and higher) = 100%; -95dbm = 1%, linear
-			//accuracy is location in meters, 68% confidence that location is inside circle with r as accuracy: 
-			//accuracy of 4 means that location is roughly inside 8 meter of diameter
-			newpoints=(int)(Math.random()*11+5);
-
-
-			for (int j = 0;j<newpoints;j++){
-
-				latitude = startLat + (float)(Math.random()*0.0001);
-				longitude = startLng +  +(float)(Math.random()*0.0001);
-				accuracy = (int)(Math.random()*10+1);
-				signal = (float) (Math.random());
-				toAdd = new OpenNetwork(bssid, ssid, freq, new LatLng(latitude, longitude), accuracy, signal,alive);
-				db.addNetwork(toAdd);
-				
-			}
-
+		return true;
 		}
-
-
-
+		return false;
 	}
+
+
 
 	private LatLng findCenterPoint(){
 		float avglat=0,avglng=0;
 		int pointCount=0;
-		List<OpenNetwork> allpoints = returnAllPointsFromDB();
+		List<OpenNetwork> allpoints = returnAllNetworksFromDB();
 
 		for(OpenNetwork ntwk : allpoints)
 		{
@@ -358,33 +355,38 @@ public class MainActivity extends FragmentActivity {
 	}
 
 
-	private List<OpenNetwork> returnAllPointsFromDB() {
-		List<OpenNetwork> result = db.getAllNetworkPoints();
+	private List<OpenNetwork> returnAllNetworksFromDB() {
+		List<OpenNetwork> result = db.getAllNetworks();
 		return result;
 	}
 
+	@Override
 	public boolean onCreateOptionsMenu(Menu menu) {
 		menu.add(0, 0, 0, "Refresh");
 		return super.onCreateOptionsMenu(menu);
 	}
 
+	@Override
 	public boolean onMenuItemSelected(int featureId, MenuItem item) {
 		mainWifi.startScan();
 		mainText.setText("Starting Scan");
 		return super.onMenuItemSelected(featureId, item);
 	}
 
+	@Override
 	protected void onPause() {
 		unregisterReceiver(receiverWifi);
 		super.onPause();
 	}
 
+	@Override
 	protected void onResume() {
 		registerReceiver(receiverWifi, new IntentFilter(WifiManager.SCAN_RESULTS_AVAILABLE_ACTION));
 		super.onResume();
 	}
 
 	class WifiReceiver extends BroadcastReceiver {
+		@Override
 		public void onReceive(Context c, Intent intent) {
 			sb = new StringBuilder();
 			wifiList = mainWifi.getScanResults();
@@ -509,5 +511,94 @@ public class MainActivity extends FragmentActivity {
 			mMap.addGroundOverlay(allKnownPoints[i]);
 		}
 	}
+	
+	
+	
+	
+	private void findCurrentLocation(double latitude, double longitude)
+	{
+		Geocoder geoCoder = new Geocoder(this, Locale.getDefault());
+		StringBuilder builder = new StringBuilder();
+		try {
+		    List<Address> address = geoCoder.getFromLocation(latitude, longitude, 1);
+		    int maxLines = address.get(0).getMaxAddressLineIndex();
+		    for (int i=0; i<maxLines; i++) {
+		    String addressStr = address.get(0).getAddressLine(i);
+		    builder.append(addressStr);
+		    builder.append(" ");
+		    }
 
+		String finalAddress = builder.toString(); //This is the complete address.
+		Log.d("LOCATION IDENTIFIED","Current address:"+finalAddress);
+		} catch (IOException e) {}
+		  catch (NullPointerException e) {}
+	}
+	 
+	
+	
+	
+	private class MyLocationListener implements LocationListener
+	{
+	   @Override
+	   public void onLocationChanged(Location loc)
+	   {
+	      if (loc != null)
+	      {
+	         // Do something knowing the location changed by the distance you requested
+	    	  findCurrentLocation(loc.getLatitude(),loc.getLongitude());
+	      }
+	   }
+
+	   @Override
+	   public void onProviderDisabled(String arg0)
+	   {
+	      // Do something here if you would like to know when the provider is disabled by the user
+	   }
+
+	   @Override
+	   public void onProviderEnabled(String arg0)
+	   {
+	      // Do something here if you would like to know when the provider is enabled by the user
+	   }
+
+	   @Override
+	   public void onStatusChanged(String arg0, int arg1, Bundle arg2)
+	   {
+	      // Do something here if you would like to know when the provider status changes
+	   }
+	}
+	
+	//test runnable thread
+	
+	  public void updateMap() {
+		  
+		 
+		    // do something long
+		    Runnable runnable = new Runnable() {
+		      @Override
+		      public void run() {
+		        
+		          
+		          updateMapWithPoints();
+		        
+		      }
+		    };
+		    new Thread(runnable).start();
+		  }
+
+	public void addSomeData() {
+		// do something long
+	    Runnable runnable = new Runnable() {
+	      @Override
+	      public void run() {
+	        
+	          
+	    	  dataHandler.addSamplePointsToDatabase(getBaseContext());
+	    	  databaseState=1;
+	      }
+	    };
+	    new Thread(runnable).start();
+	}
+	
+	
 }

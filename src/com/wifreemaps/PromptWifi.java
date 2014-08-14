@@ -15,13 +15,15 @@ public class PromptWifi extends DialogFragment {
         AlertDialog.Builder builder = new AlertDialog.Builder(getActivity());
         builder.setMessage(R.string.prompt_wifi)
                .setPositiveButton(R.string.ok, new DialogInterface.OnClickListener() {
-                   public void onClick(DialogInterface dialog, int id) {
+                   @Override
+				public void onClick(DialogInterface dialog, int id) {
                        // redirect user to setting page
                 	   startActivity(new Intent(Settings.ACTION_WIFI_SETTINGS));
                    }
                })
                .setNegativeButton(R.string.cancel, new DialogInterface.OnClickListener() {
-                   public void onClick(DialogInterface dialog, int id) {
+                   @Override
+				public void onClick(DialogInterface dialog, int id) {
                        // User cancelled the dialog
                    }
                });
