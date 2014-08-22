@@ -14,7 +14,7 @@ import android.database.sqlite.SQLiteOpenHelper;
 import android.util.Log;
 
 public class MySQLiteHelper extends SQLiteOpenHelper{
-	private static final int DATABASE_VERSION = 1;
+	private static final int DATABASE_VERSION = 15;
 	private static final String DATABASE_NAME = "OpenNetworkDB";
 	
 	
@@ -127,9 +127,26 @@ public class MySQLiteHelper extends SQLiteOpenHelper{
 	
 	public void addNetworkPoint(NetworkPoint point){
 		Log.d("addPoint", point.toString());
-		
 		// 1. get reference to writable DB
         SQLiteDatabase db = this.getWritableDatabase();
+		
+		//if there are more than 30 points, first delete the worst point
+		String query= "SELECT count(*)" +
+				" FROM "+TABLE_POINTS+" " +
+				"WHERE "+KEY_POINT_BSSID+"= '"+point.getBSSID()+"'";
+		Cursor cursor = db.rawQuery(query, null);
+		if (cursor.moveToFirst())
+		{
+			if(cursor.getInt(0) > 30)
+			{
+				Log.d("POINTS_OVERFLOW","remove worst point and continue");
+				int indx=findWorstPoint(point.getBSSID());
+				db.delete(TABLE_POINTS, KEY_BSSID+"="+point.getBSSID() +" AND "+KEY_indx+" = "+ indx , null);
+				Log.d("RemovedPoint","BSSID:"+point.getBSSID()+" index="+indx);
+			}
+		}
+		
+		
  
         
         // 2. create ContentValues to add key "column"/value

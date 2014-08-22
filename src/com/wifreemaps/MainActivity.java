@@ -5,6 +5,7 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
 
+import com.google.android.gms.internal.hh;
 import com.google.android.gms.maps.CameraUpdateFactory;
 import com.google.android.gms.maps.GoogleMap;
 import com.google.android.gms.maps.GoogleMap.OnCameraChangeListener;
@@ -53,8 +54,21 @@ import android.widget.TextView;
 public class MainActivity extends FragmentActivity {
 	private static GoogleMap mMap = null;
 	private static Handler handler = new Handler(Looper.getMainLooper());
+	
+	
+	public static final String PSK = "PSK";
+    public static final String WEP = "WEP";
+    public static final String EAP = "EAP";
+    public static final String OPEN = "Open";
+
+	
+	//statics
+    private static final int TIME_BETWEEN_ADDING_NEW_POINT=10000; //how often can system add new point to data
+    private static final int TIME_FOR_MAP_UPDATE=5000; //map update rate
+	
 
 	TextView mainText;
+	TextView debugText;
 	WifiManager mainWifi;
 	WifiReceiver receiverWifi;
 	List<ScanResult> wifiList;
@@ -65,13 +79,22 @@ public class MainActivity extends FragmentActivity {
 	MySQLiteHelper db;
 	private static DataHandler dataHandler;
 	private static int databaseState=0;
+	private LatLng myCurrentLocation;
+	private double currentGPSAccuracy=50;
+	private List <OpenNetwork> networksInRange=new ArrayList<OpenNetwork>();
 	
-	List<OpenNetwork> currentNetworks;
-	List<NetworkPoint> networkPoints;
+	List<OpenNetwork> currentNetworks=new ArrayList<OpenNetwork>();
+	List<NetworkPoint> networkPoints=new ArrayList<NetworkPoint>();
 
 	//simulate adding new points with this handler
+	private int mInterval = 5000; // 5 seconds by default, can be changed later
 	private Handler mHandler;
-	private int mInterval = 5000;
+	private long lastRefreshTime;
+	private long lastMapRefresh;
+	
+	double lat1,lon1;
+	
+	
 
 
 	@Override
@@ -79,6 +102,7 @@ public class MainActivity extends FragmentActivity {
 		super.onCreate(savedInstanceState);
 
 		setContentView(R.layout.activity_main); 
+		mHandler = new Handler();
 
 		mMap=((MapFragment) getFragmentManager().findFragmentById(R.id.map)).getMap();
 		mMap.setMapType(GoogleMap.MAP_TYPE_HYBRID);
@@ -130,11 +154,13 @@ public class MainActivity extends FragmentActivity {
 
 		});
 
-
+		//SETUP
+		myCurrentLocation = new LatLng(10, 10);
+		lastRefreshTime=System.currentTimeMillis();
 		
-
+		//VIEWS
 		mainText = (TextView) findViewById(R.id.wifilist);
-
+		debugText = (TextView) findViewById(R.id.status);
 
 		mainWifi = (WifiManager) getSystemService(Context.WIFI_SERVICE);
 
@@ -160,9 +186,9 @@ public class MainActivity extends FragmentActivity {
 		
 		
 		// The minimum time (in miliseconds) the system will wait until checking if the location changed
-		int minTime = 60000;
+		int minTime = 1000;
 		// The minimum distance (in meters) traveled until you will be notified
-		float minDistance = 15;
+		float minDistance = 4;
 		// Create a new instance of the location listener
 		MyLocationListener myLocListener = new MyLocationListener();
 		// Get the location manager from the system
@@ -179,8 +205,11 @@ public class MainActivity extends FragmentActivity {
 		String bestProvider = locationManager.getBestProvider(criteria, false);
 		// Request location updates
 		locationManager.requestLocationUpdates(bestProvider, minTime, minDistance, myLocListener);
+		///another method for location...
 		
 		
+		
+		_getLocation();
 		
 
 		//try with database
@@ -199,17 +228,17 @@ public class MainActivity extends FragmentActivity {
 
 		if(db.isDBempty()){
 			//addSomeData();
-			handler.post(new Runnable(){
-
-				@Override
-				public void run() {
-					// TODO Auto-generated method stub
-					dataHandler.addSamplePointsToDatabase(getBaseContext());
-			    	databaseState=1;
-					
-				} 
-				   // your UI code here 
-				});
+//			handler.post(new Runnable(){
+//
+//				@Override
+//				public void run() {
+//					// TODO Auto-generated method stub
+//					dataHandler.addSamplePointsToDatabase(getBaseContext());
+//			    	databaseState=1;
+//					
+//				} 
+//				  
+//				});
 		}
 		else
 			databaseState = 1;
@@ -223,32 +252,54 @@ public class MainActivity extends FragmentActivity {
 			@Override
 			public void run() {
 				// TODO Auto-generated method stub
-				while (databaseState != 1)
+//				while (databaseState != 1)
+//				{
+//					try {
+//						Thread.sleep(200);
+//					} catch (InterruptedException e) {
+//						// TODO Auto-generated catch block
+//						e.printStackTrace();
+//					}
+//				}
+				
+				
+				//lalallalala
+				
+				if(databaseState != 0)
 				{
-					try {
-						Thread.sleep(200);
-					} catch (InterruptedException e) {
-						// TODO Auto-generated catch block
-						e.printStackTrace();
-					}
+					updateMapWithPoints();
+					handler.post(new Runnable(){
+
+						@Override
+						public void run() {
+							
+							//now focus on average point
+							LatLng locationtocenter = findCenterPoint();
+							mMap.animateCamera(CameraUpdateFactory.newLatLngZoom(locationtocenter, 19.0f));
+						}
+					});
 				}
 				
-				updateMapWithPoints();
-				handler.post(new Runnable(){
-
-					@Override
-					public void run() {
-						try {
-							Thread.sleep(500);
-						} catch (InterruptedException e) {
-							// TODO Auto-generated catch block
-							e.printStackTrace();
-						}
-						//now focus on average point
-						LatLng locationtocenter = findCenterPoint();
-						mMap.animateCamera(CameraUpdateFactory.newLatLngZoom(locationtocenter, 19.0f));
-				}
-				});
+				
+				
+				//lalalla
+				
+//				updateMapWithPoints();
+//				handler.post(new Runnable(){
+//
+//					@Override
+//					public void run() {
+//						try {
+//							Thread.sleep(500);
+//						} catch (InterruptedException e) {
+//							// TODO Auto-generated catch block
+//							e.printStackTrace();
+//						}
+//						//now focus on average point
+//						LatLng locationtocenter = findCenterPoint();
+//						mMap.animateCamera(CameraUpdateFactory.newLatLngZoom(locationtocenter, 19.0f));
+//				}
+//				});
 				
 				
 			} 
@@ -268,10 +319,11 @@ public class MainActivity extends FragmentActivity {
 		mainWifi.startScan();
 		mainText.setText("\nStarting Scan...\n");
 		mainText.setMovementMethod(new ScrollingMovementMethod());
-
+		debugText.setMovementMethod(new ScrollingMovementMethod());
 		
-
+		//periodic refresh of googlemaps
 		
+		startRepeatingTask();
 
 
 
@@ -280,59 +332,71 @@ public class MainActivity extends FragmentActivity {
 	private boolean updateMapWithPoints() {
 		
 		
-		
+
+		Log.d("UPDATING MAP","points should be added");
 		
 		if(databaseState != 0) {
-		
-		
-		currentNetworks = db.getAllNetworks();
-		//List<OpenNetwork> currentNetworkPoints = new ArrayList<OpenNetwork>();
-		List<String> uniqueNetworks=new ArrayList<String>();
-		List<Integer> networkColors = new ArrayList<Integer>();
-		//ADD GROUND OVERLAY which represents wifi network
-		Bitmap radiusImageSource=BitmapFactory.decodeResource(getResources(), R.drawable.fadingout);
-		
-		
-		
-				
-		
-		//count different newtorks and mix some colors
-		for(OpenNetwork ntwk : currentNetworks)
-		{
-			if(! uniqueNetworks.contains(ntwk.getBSSID()) )
-			{
-				uniqueNetworks.add(ntwk.getBSSID());
-				int mixNewColor=Color.argb(255, (int)(Math.random()*200 + 55), (int)(Math.random()*200 + 55), (int)(Math.random()*200 + 55));
-				networkColors.add(mixNewColor);
-			}
-		}
-		
-		//draw this points with corresponding colors
-		for(String bssid : uniqueNetworks)
-		{
-			
-			BitmapDescriptor radiusImage=GetCustomBitmapDescriptor(radiusImageSource, networkColors.get(uniqueNetworks.indexOf(bssid)));
 
-			
-			db=new MySQLiteHelper(this);
-			networkPoints=db.getNetworkPoints(bssid);
-			
-			for(NetworkPoint point: networkPoints)
+
+			currentNetworks = db.getAllNetworks();
+			//List<OpenNetwork> currentNetworkPoints = new ArrayList<OpenNetwork>();
+			List<String> uniqueNetworks=new ArrayList<String>();
+			List<Integer> networkColors = new ArrayList<Integer>();
+			//ADD GROUND OVERLAY which represents wifi network
+			Bitmap radiusImageSource=BitmapFactory.decodeResource(getResources(), R.drawable.fadingout);
+
+
+			Log.d("UPDATING MAP","searching for networks in database");
+
+
+			//count different newtorks and mix some colors
+			for(OpenNetwork ntwk : currentNetworks)
 			{
-				GroundOverlayOptions openWifiSpot = new GroundOverlayOptions()
-				.image(radiusImage)
-				.position(point.getLocation(), (float)point.getGpsAccuracy(), (float)point.getGpsAccuracy()) //Na tem mestu poraèunati natanènost in sinhronizirati z velikostjo
-				.transparency(1.0f-(float)point.getQuality()); //odvisno od kvalitete signala pobarvati med 0 in 1, izdelati naèin da se porazdeli na prostor- > (moc.signala/max.moc)/povrsina
-				mMap.addGroundOverlay(openWifiSpot);
+				if(! uniqueNetworks.contains(ntwk.getBSSID()) )
+				{
+					uniqueNetworks.add(ntwk.getBSSID());
+					int mixNewColor=Color.argb(255, (int)(Math.random()*200 + 55), (int)(Math.random()*200 + 55), (int)(Math.random()*200 + 55));
+					networkColors.add(mixNewColor);
+					Log.d("UPDATING MAP","added new unique network and color");
+				}
+				
 			}
-			//Log.v("WIFIADDED"," bssid:"+bssid);
+
+			//draw this points with corresponding colors
+			Log.d("UPDATING MAP","about to draw points on map");
+			for(String bssid : uniqueNetworks)
+			{
+
+				BitmapDescriptor radiusImage=GetCustomBitmapDescriptor(radiusImageSource, networkColors.get(uniqueNetworks.indexOf(bssid)));
+
+
+				db=new MySQLiteHelper(this);
+				networkPoints=db.getNetworkPoints(bssid);
+				float pointIntensity=0;
+				for(NetworkPoint point: networkPoints)
+				{
+					pointIntensity=0.9f-(float)point.getQuality();
+					
+					GroundOverlayOptions openWifiSpot = new GroundOverlayOptions()
+					.image(radiusImage)
+					.position(point.getLocation(), (float)point.getGpsAccuracy(), (float)point.getGpsAccuracy()) //Na tem mestu poraèunati natanènost in sinhronizirati z velikostjo
+					.transparency(pointIntensity); //odvisno od kvalitete signala pobarvati med 0 in 1, izdelati naèin da se porazdeli na prostor- > (moc.signala/max.moc)/povrsina
+					mMap.addGroundOverlay(openWifiSpot);
+					Log.d("Point quality:",point.getQuality()+"");
+				}
+				Log.d("WIFIADDED on MAP"," bssid:"+bssid);
+			}
+
+			return true;
 		}
-		
-		return true;
-		}
+		Log.d("NODATATOADD","No data in database to add on map...");
 		return false;
 	}
 
+	
+	
+	
+	
 
 
 	private LatLng findCenterPoint(){
@@ -388,14 +452,69 @@ public class MainActivity extends FragmentActivity {
 	class WifiReceiver extends BroadcastReceiver {
 		@Override
 		public void onReceive(Context c, Intent intent) {
+			
+			List <OpenNetwork> currentNetworksInRange = new ArrayList<OpenNetwork>();
+			OpenNetwork temp;
+			
 			sb = new StringBuilder();
 			wifiList = mainWifi.getScanResults();
-			for(int i = 0; i < wifiList.size(); i++){
-				sb.append(new Integer(i+1).toString() + ".");
-				sb.append((wifiList.get(i)).toString());
-				sb.append("\n");
+//			for(int i = 0; i < wifiList.size(); i++){
+//				sb.append(new Integer(i+1).toString() + ".");
+//				sb.append((wifiList.get(i)).toString());
+//				sb.append("\n");
+//			}
+//			mainText.setText(sb);
+			
+			
+			//check if there is any open access points
+			
+			String [] securityModes = {WEP, PSK, EAP};
+			boolean open=true;
+			int idx=0;
+			currentNetworksInRange.clear();
+			for(ScanResult scan : wifiList)
+			{
+				//opened until proved secure
+				open = true;
+				
+				for (int i = securityModes.length - 1; i >= 0; i--) {
+		            if (scan.capabilities.contains(securityModes[i])) {
+		                 open=false;
+		            }
+		            
+		        }
+				
+				if(open)
+				{
+					sb.append(new Integer(idx+1).toString() + ".");
+					sb.append("SSID: "+ scan.SSID);
+					sb.append("BSSID: " +scan.BSSID);
+					sb.append("Capas: "+ scan.capabilities);
+					sb.append("Freq:" +scan.frequency);
+					
+					sb.append("\n");
+					idx++;
+					
+					temp=new OpenNetwork(scan.BSSID, scan.SSID, "cityname", scan.frequency, myCurrentLocation, 0);
+					currentNetworksInRange.add(temp);
+					
+				}
+
 			}
 			mainText.setText(sb);
+			
+			//try to add this networks to existing networks
+			networksInRange.clear();
+			networksInRange = currentNetworksInRange;
+			
+			for(OpenNetwork ntwk:networksInRange)
+			{
+				addNewNetwork(ntwk);
+			}
+			
+			
+			
+			
 		}
 	}
 
@@ -482,61 +601,92 @@ public class MainActivity extends FragmentActivity {
 	}
 
 
-	Runnable mStatusChecker = new Runnable() {
-		@Override 
-		public void run() {
-			addNewPoint(); //this function can change value of mInterval.
-			mHandler.postDelayed(mStatusChecker, mInterval);
-		}
-	};
+	
 
-	void startRepeatingTask() {
-		mStatusChecker.run(); 
-	}
-
-	void stopRepeatingTask() {
-		mHandler.removeCallbacks(mStatusChecker);
-	}
-
-	private void addNewPoint()
-	{
-
-		float lat=46.042931f;
-		float lon=14.487516f;
-		GroundOverlayOptions[] allKnownPoints = new GroundOverlayOptions[20];
-		allKnownPoints = getAllKnownPoints(allKnownPoints.length, Color.MAGENTA,lat,lon);
-		//System.out.println("Adding some data to map...");
-		for(int i= 0; i < allKnownPoints.length;i++)
-		{
-			mMap.addGroundOverlay(allKnownPoints[i]);
-		}
-	}
+//	private void addNewPoint()
+//	{
+//
+//		float lat=46.042931f;
+//		float lon=14.487516f;
+//		GroundOverlayOptions[] allKnownPoints = new GroundOverlayOptions[20];
+//		allKnownPoints = getAllKnownPoints(allKnownPoints.length, Color.MAGENTA,lat,lon);
+//		//System.out.println("Adding some data to map...");
+//		for(int i= 0; i < allKnownPoints.length;i++)
+//		{
+//			mMap.addGroundOverlay(allKnownPoints[i]);
+//		}
+//	}
 	
 	
 	
 	
 	private void findCurrentLocation(double latitude, double longitude)
 	{
-		Geocoder geoCoder = new Geocoder(this, Locale.getDefault());
-		StringBuilder builder = new StringBuilder();
-		try {
-		    List<Address> address = geoCoder.getFromLocation(latitude, longitude, 1);
-		    int maxLines = address.get(0).getMaxAddressLineIndex();
-		    for (int i=0; i<maxLines; i++) {
-		    String addressStr = address.get(0).getAddressLine(i);
-		    builder.append(addressStr);
-		    builder.append(" ");
-		    }
-
-		String finalAddress = builder.toString(); //This is the complete address.
-		Log.d("LOCATION IDENTIFIED","Current address:"+finalAddress);
-		} catch (IOException e) {}
-		  catch (NullPointerException e) {}
+		
+		myCurrentLocation = new LatLng(latitude, longitude);
+		
+//		Geocoder geoCoder = new Geocoder(this, Locale.getDefault());
+//		StringBuilder builder = new StringBuilder();
+//		String finalAddress = "";
+//		try {
+//		    List<Address> address = geoCoder.getFromLocation(latitude, longitude, 1);
+//		    int maxLines = address.get(0).getMaxAddressLineIndex();
+//		    for (int i=0; i<maxLines; i++) {
+//		    String addressStr = address.get(0).getAddressLine(i);
+//		    builder.append(addressStr);
+//		    builder.append(" ");
+//		    }
+//
+//		finalAddress = builder.toString(); //This is the complete address.
+//		Log.d("LOCATION IDENTIFIED","Current address:"+finalAddress);
+//		} catch (IOException e) {}
+//		  catch (NullPointerException e) {}
+		debugText.setText("Current location:"+ String.format ("%s",latitude)+ " "+String.format ("%s",longitude));
+//		if(finalAddress != "")
+//			debugText.setText(debugText.getText() + "/n" + finalAddress);
+		
+		
+		
 	}
 	 
 	
 	
 	
+	private void addPointsOnCurrentLocation() {
+		Log.d("AddNewPoints","Adding new points in current networks, if any");
+		double normalisedLevel=0;
+		String [] securityModes = {WEP, PSK, EAP};
+		boolean open=true;
+		if(lastRefreshTime - System.currentTimeMillis() < TIME_BETWEEN_ADDING_NEW_POINT){
+			for(ScanResult ntwkScan:wifiList)
+			{
+				{
+					//opened until proved secure
+					open = true;
+
+					for (int i = securityModes.length - 1; i >= 0; i--) {
+						if (ntwkScan.capabilities.contains(securityModes[i])) {
+							open=false;
+						}
+
+					}
+
+					if(open)
+					{
+						Log.d("DetailsForAddedPoint:","ScanLVL:"+ntwkScan.level +" current accuracy:"+currentGPSAccuracy);
+						normalisedLevel=(-35.0f/(ntwkScan.level))/currentGPSAccuracy*1.0f *10;
+						Log.d("NormalisedLevelForAddedPoint:",""+normalisedLevel);
+						NetworkPoint newPoint=new NetworkPoint(ntwkScan.BSSID,myCurrentLocation,normalisedLevel,currentGPSAccuracy,ntwkScan.timestamp);
+						db.addNetworkPoint(newPoint);
+					}
+
+				}
+
+
+			}
+			lastRefreshTime = System.currentTimeMillis();
+		}
+	}
 	private class MyLocationListener implements LocationListener
 	{
 	   @Override
@@ -545,7 +695,10 @@ public class MainActivity extends FragmentActivity {
 	      if (loc != null)
 	      {
 	         // Do something knowing the location changed by the distance you requested
+	    	  Log.d("LocationChanged","Current:"+loc.getLatitude()+" "+loc.getLongitude());
+	    	  currentGPSAccuracy=loc.getAltitude();
 	    	  findCurrentLocation(loc.getLatitude(),loc.getLongitude());
+	    	  addPointsOnCurrentLocation();
 	      }
 	   }
 
@@ -570,21 +723,21 @@ public class MainActivity extends FragmentActivity {
 	
 	//test runnable thread
 	
-	  public void updateMap() {
-		  
-		 
-		    // do something long
-		    Runnable runnable = new Runnable() {
-		      @Override
-		      public void run() {
-		        
-		          
-		          updateMapWithPoints();
-		        
-		      }
-		    };
-		    new Thread(runnable).start();
-		  }
+//	  public void updateMap() {
+//		  
+//		 
+//		    // do something long
+//		    Runnable runnable = new Runnable() {
+//		      @Override
+//		      public void run() {
+//		        
+//		          
+//		          updateMapWithPoints();
+//		        
+//		      }
+//		    };
+//		    new Thread(runnable).start();
+//		  }
 
 	public void addSomeData() {
 		// do something long
@@ -601,4 +754,109 @@ public class MainActivity extends FragmentActivity {
 	}
 	
 	
+	public void addNewNetwork(OpenNetwork newNetwork)
+	{
+		boolean isNew=true;
+		for(OpenNetwork ntwk : currentNetworks)
+		{
+			if(ntwk.getBSSID().equals(newNetwork.getBSSID()))
+			{
+				isNew = false;
+			}
+		}
+		
+		if(isNew)
+		{
+			//add network with information to currentnetworka and update database
+			currentNetworks.add(newNetwork);
+			db.addNetwork(newNetwork);
+			if(!db.isDBempty())
+				databaseState=1;
+			
+			debugText.setText("Added new network " +newNetwork.getSSID()+ " on location:"+newNetwork.getLocation());
+			addPointsOnCurrentLocation();
+		}
+		
+		
+		
+	}
+	
+	Runnable mStatusChecker = new Runnable() {
+	    @Override 
+	    public void run() {
+	    	//_getLocation();
+	      if(lastMapRefresh - System.currentTimeMillis() < TIME_FOR_MAP_UPDATE){
+	    	  Log.d("CLEAR_MAP","Try to clear map...");
+	    	  mMap.clear();
+	    	  Log.d("CLEAR MAP","map was cleared");
+		      if(updateMapWithPoints())
+		    	  Log.d("UPDATE MAP", "success"); //this function can change value of mInterval.
+		      else
+		    	  Log.d("UPDATE MAP", "failed");
+		      mHandler.postDelayed(mStatusChecker, mInterval);
+	      }
+	    }
+	  };
+
+	  void startRepeatingTask() {
+	    mStatusChecker.run(); 
+	  }
+
+	  void stopRepeatingTask() {
+	    mHandler.removeCallbacks(mStatusChecker);
+	  }
+	  
+	  
+	  private void _getLocation() {
+		    // Get the location manager
+		    LocationManager locationManager = (LocationManager) 
+		            getSystemService(LOCATION_SERVICE);
+		    Criteria criteria = new Criteria();
+		    String bestProvider = locationManager.getBestProvider(criteria, false);
+		    Location location = locationManager.getLastKnownLocation(bestProvider);
+		    try {
+		        lat1 = location.getLatitude();
+		        lon1 = location.getLongitude();
+		        myCurrentLocation=new LatLng(lat1, lon1);
+		        Log.d("LOCATION:",lat1 + " " +lon1);
+		    } catch (NullPointerException e) {
+		    	lat1 = -1.0;
+		    	lon1 = -1.0;
+		    	Log.d("NO LOCATION","NONE");
+
+		    	//try with network
+		    	criteria=new Criteria();
+		    	bestProvider=LocationManager.NETWORK_PROVIDER;
+		    	location=locationManager.getLastKnownLocation(bestProvider);
+		    	try {
+		    		lat1 = location.getLatitude();
+		    		lon1 = location.getLongitude();
+		    		myCurrentLocation=new LatLng(lat1, lon1);
+		    		Log.d("LOCATION via network:",lat1 + " " +lon1);
+		    	} catch (NullPointerException e1) {
+		    		lat1 = -1.0;
+		    		lon1 = -1.0;
+		    		Log.d("NO LOCATION","NONE");
+		    		//try with passive
+		    		criteria=new Criteria();
+		    		bestProvider=LocationManager.PASSIVE_PROVIDER;
+		    		location=locationManager.getLastKnownLocation(bestProvider);
+		    		try {
+		    			lat1 = location.getLatitude();
+		    			lon1 = location.getLongitude();
+		    			myCurrentLocation=new LatLng(lat1, lon1);
+		    			Log.d("LOCATION via PASSIVE:",lat1 + " " +lon1);
+		    		} catch (NullPointerException e2) {
+		    			lat1 = -1.0;
+		    			lon1 = -1.0;
+		    			Log.d("NO LOCATION","NONE,nada, fail!");
+		    		}
+
+		    	}
+		    }
+		    
+		    
+		}
+	  
+	  
 }
