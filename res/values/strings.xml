@@ -8,4 +8,6 @@
 	<string name="ok">OK</string>
 	<string name="cancel">Cancel</string>
 	<string name="prompt_gps">GPS sattelites not available. Enable?</string>
+	<string name="networkListView">Current networks</string>
+	<string name="networkDetails">Network details</string>
 </resources>

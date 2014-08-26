@@ -10,6 +10,7 @@ import com.google.android.gms.maps.CameraUpdateFactory;
 import com.google.android.gms.maps.GoogleMap;
 import com.google.android.gms.maps.GoogleMap.OnCameraChangeListener;
 import com.google.android.gms.maps.MapFragment;
+import com.google.android.gms.maps.Projection;
 import com.google.android.gms.maps.model.BitmapDescriptor;
 import com.google.android.gms.maps.model.BitmapDescriptorFactory;
 import com.google.android.gms.maps.model.CameraPosition;
@@ -54,6 +55,11 @@ import android.widget.TextView;
 public class MainActivity extends FragmentActivity {
 	private static GoogleMap mMap = null;
 	private static Handler handler = new Handler(Looper.getMainLooper());
+	private float currentZoomLevel;
+	private List<String> uniqueNetworks=new ArrayList<String>();
+	private List<Integer> networkColors = new ArrayList<Integer>();
+	private List<NetworkMarking> drawableNetworkMarkings = new ArrayList<NetworkMarking>();
+	private List<NetworkPoint> allAvailableNetworkPoints = new ArrayList<NetworkPoint>();
 	
 	
 	public static final String PSK = "PSK";
@@ -63,8 +69,8 @@ public class MainActivity extends FragmentActivity {
 
 	
 	//statics
-    private static final int TIME_BETWEEN_ADDING_NEW_POINT=10000; //how often can system add new point to data
-    private static final int TIME_FOR_MAP_UPDATE=5000; //map update rate
+    private static final int TIME_BETWEEN_ADDING_NEW_POINT=15000; //how often can system add new point to data
+    private static final int TIME_FOR_MAP_UPDATE=10000; //map update rate
 	
 
 	TextView mainText;
@@ -116,10 +122,12 @@ public class MainActivity extends FragmentActivity {
 					currentZoom = position.zoom;  // here you get zoom level
 
 					Log.d("CurrentZoomLevel","LVL:"+currentZoom);
-
+					currentZoomLevel=currentZoom;
+					
 					if(currentZoom > 19)
 					{	//FOR zoom levels 20 and 21
 						//SHOW MOST DETAILED VIEW
+						
 					}
 					else if(currentZoom == 19)
 					{
@@ -334,14 +342,14 @@ public class MainActivity extends FragmentActivity {
 		
 
 		Log.d("UPDATING MAP","points should be added");
+		Log.d("UPDATING WITH ZOOM LEVEL:","ZOOMLVL:"+currentZoomLevel);
 		
 		if(databaseState != 0) {
 
 
 			currentNetworks = db.getAllNetworks();
 			//List<OpenNetwork> currentNetworkPoints = new ArrayList<OpenNetwork>();
-			List<String> uniqueNetworks=new ArrayList<String>();
-			List<Integer> networkColors = new ArrayList<Integer>();
+
 			//ADD GROUND OVERLAY which represents wifi network
 			Bitmap radiusImageSource=BitmapFactory.decodeResource(getResources(), R.drawable.fadingout);
 
@@ -349,7 +357,7 @@ public class MainActivity extends FragmentActivity {
 			Log.d("UPDATING MAP","searching for networks in database");
 
 
-			//count different newtorks and mix some colors
+			//count different newtorks and mix some colors. Add new networks to current map if necessary
 			for(OpenNetwork ntwk : currentNetworks)
 			{
 				if(! uniqueNetworks.contains(ntwk.getBSSID()) )
@@ -362,16 +370,71 @@ public class MainActivity extends FragmentActivity {
 				
 			}
 
+			
+			
+			//different zoom levels require different markings
+			if(currentZoomLevel > 19)
+			{	//FOR zoom levels 20 and 21
+				//SHOW MOST DETAILED VIEW
+				
+				
+				
+				
+				
+				
+				
+			}
+			else if(currentZoomLevel == 19)
+			{
+				//First simplified shape of network, expect up to 10 networks
+			}
+			else if(currentZoomLevel == 18)
+			{
+				//second simplified view of network, up to 30 networks
+			}
+			else if(currentZoomLevel == 17)
+			{
+				//Every network is represented with colored circle
+			}
+			else if(currentZoomLevel == 16)
+			{
+				//Every network is a single spot/dot
+			}
+			else if(currentZoomLevel == 15)
+			{
+				//group up to 10 networks in single circle
+			}
+			else if(currentZoomLevel == 14)
+			{
+				//goup all networks into 6 areas with networks, circles or something
+			}
+			else if(currentZoomLevel < 14)
+			{
+				//group networks that are more than x meters(7x7 grid to zoom, center is average position = average position) apart into dots
+			}
+			
+			
 			//draw this points with corresponding colors
+			
+			
+			
+			
+			
 			Log.d("UPDATING MAP","about to draw points on map");
 			for(String bssid : uniqueNetworks)
 			{
-
+				
+				
 				BitmapDescriptor radiusImage=GetCustomBitmapDescriptor(radiusImageSource, networkColors.get(uniqueNetworks.indexOf(bssid)));
 
 
 				db=new MySQLiteHelper(this);
 				networkPoints=db.getNetworkPoints(bssid);
+				
+				
+				
+				com.google.maps.android.heatmaps.HeatmapTileProvider ddd =
+				
 				float pointIntensity=0;
 				for(NetworkPoint point: networkPoints)
 				{
@@ -386,7 +449,12 @@ public class MainActivity extends FragmentActivity {
 				}
 				Log.d("WIFIADDED on MAP"," bssid:"+bssid);
 			}
-
+			//network image da pride ena slika namesto 30
+			NetworkMarking marking = new NetworkMarking(networkPoints, Color.CYAN);
+			
+			BitmapDescriptor networkImage= marking.returnNetworkMarkingAsImage(mMap);
+			
+			//test
 			return true;
 		}
 		Log.d("NODATATOADD","No data in database to add on map...");
@@ -427,13 +495,24 @@ public class MainActivity extends FragmentActivity {
 	@Override
 	public boolean onCreateOptionsMenu(Menu menu) {
 		menu.add(0, 0, 0, "Refresh");
+		menu.add(1,1,1,"Show Networks");
+		
 		return super.onCreateOptionsMenu(menu);
 	}
 
 	@Override
 	public boolean onMenuItemSelected(int featureId, MenuItem item) {
-		mainWifi.startScan();
-		mainText.setText("Starting Scan");
+		int selected=item.getItemId();
+		if(selected == 0){
+			mainWifi.startScan();
+			mainText.setText("Starting Scan");
+		}
+		else if(selected == 1)
+		{
+			Intent intent=new Intent(getBaseContext(), ShowNetworksActivity.class);
+			startActivity(intent);
+		}
+		Log.d("ITEM ID:",item.getItemId()+" pressed");
 		return super.onMenuItemSelected(featureId, item);
 	}
 
@@ -793,6 +872,8 @@ public class MainActivity extends FragmentActivity {
 		    	  Log.d("UPDATE MAP", "success"); //this function can change value of mInterval.
 		      else
 		    	  Log.d("UPDATE MAP", "failed");
+		      lastMapRefresh = System.currentTimeMillis();
+		      Log.d("LASTREFRESH:",lastMapRefresh+"");
 		      mHandler.postDelayed(mStatusChecker, mInterval);
 	      }
 	    }
@@ -857,6 +938,8 @@ public class MainActivity extends FragmentActivity {
 		    
 		    
 		}
+	  
+	 
 	  
 	  
 }
