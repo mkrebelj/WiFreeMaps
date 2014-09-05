@@ -228,7 +228,7 @@ public class MySQLiteHelper extends SQLiteOpenHelper{
 	           } while (cursor.moveToNext());
 	       }
 	 
-	       Log.d("getNetworkPoints()", networkPoints.toString());
+//	       Log.d("getNetworkPoints()", networkPoints.toString());
 	       
 	       db.close();
 	       // return books

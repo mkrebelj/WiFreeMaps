@@ -7,6 +7,7 @@ import java.util.List;
 import java.util.Locale;
 
 import com.google.android.gms.internal.hh;
+import com.google.android.gms.internal.ln;
 import com.google.android.gms.maps.CameraUpdateFactory;
 import com.google.android.gms.maps.GoogleMap;
 import com.google.android.gms.maps.GoogleMap.OnCameraChangeListener;
@@ -473,7 +474,7 @@ public class MainActivity extends FragmentActivity {
 
 				currentNetworks = db.getAllNetworks();
 				//List<OpenNetwork> currentNetworkPoints = new ArrayList<OpenNetwork>();
-
+				mMap.clear();
 				
 				
 				//MY method for drawing onto map
@@ -557,7 +558,7 @@ public class MainActivity extends FragmentActivity {
 				
 				//in case we would need all data from points
 				allAvailableNetworkPoints.clear();
-
+				mMap.clear();
 				for(OpenNetwork ntwk : currentNetworks)
 				{
 					networkPoints=db.getNetworkPoints(ntwk.getBSSID());
@@ -577,7 +578,7 @@ public class MainActivity extends FragmentActivity {
 						"fakeurl"));
 				mProvider = new MyHeatmapTileProvider.Builder().data(
 						mLists.get("WifiTocke").getData()).build();
-
+				
 				mOverlay = mMap.addTileOverlay(new TileOverlayOptions().tileProvider(mProvider));
 				mOverlay.clearTileCache();
 			}
@@ -615,7 +616,7 @@ private boolean updateMapWithPointsFromMemory() {
 			if(newPointDetected){
 				//ADD GROUND OVERLAY which represents wifi network
 				Bitmap radiusImageSource=BitmapFactory.decodeResource(getResources(), R.drawable.fadingout);
-
+				mMap.clear();
 
 				Log.d("UPDATING MAP","searching for networks in working memory");
 
@@ -667,17 +668,27 @@ private boolean updateMapWithPointsFromMemory() {
 			{
 			
 				mLists.clear();
+				
+				
 				mLists.put("WifiTocke", new DataSet( currentNetworkPointsForHeatmaps,
 						"fakeurl"));
+				
+				
+				
 				mProvider = new MyHeatmapTileProvider.Builder().data(
 						mLists.get("WifiTocke").getData()).build();
-
+				
+				mMap.clear();
+				
+				
 				mOverlay = mMap.addTileOverlay(new TileOverlayOptions().tileProvider(mProvider));
 				mOverlay.clearTileCache();
 				
 				newPointDetected=false;
 				return true;
 			}
+			
+			Log.d("NUMBER OF POINTS","Currently shown on map:"+currentNetworkPointsForHeatmaps.size()+" points");
 			
 		}
 			
@@ -875,22 +886,25 @@ private boolean updateMapWithPointsFromMemory() {
 		
 		myCurrentLocation = new LatLng(latitude, longitude);
 		
-//		Geocoder geoCoder = new Geocoder(this, Locale.getDefault());
-//		StringBuilder builder = new StringBuilder();
-//		String finalAddress = "";
-//		try {
-//		    List<Address> address = geoCoder.getFromLocation(latitude, longitude, 1);
-//		    int maxLines = address.get(0).getMaxAddressLineIndex();
-//		    for (int i=0; i<maxLines; i++) {
-//		    String addressStr = address.get(0).getAddressLine(i);
-//		    builder.append(addressStr);
-//		    builder.append(" ");
-//		    }
-//
-//		finalAddress = builder.toString(); //This is the complete address.
-//		Log.d("LOCATION IDENTIFIED","Current address:"+finalAddress);
-//		} catch (IOException e) {}
-//		  catch (NullPointerException e) {}
+		Geocoder geoCoder = new Geocoder(this, Locale.getDefault());
+		StringBuilder builder = new StringBuilder();
+		String finalAddress = "";
+		try {
+		    List<Address> address = geoCoder.getFromLocation(latitude, longitude, 4);
+		    int maxLines = address.get(0).getMaxAddressLineIndex();
+		    for (int i=0; i<maxLines; i++) {
+		    String addressStr = address.get(0).getAddressLine(i);
+		    builder.append(addressStr);
+		    builder.append(" ");
+		    }
+
+		finalAddress = builder.toString(); //This is the complete address.
+		Log.d("LOCATION IDENTIFIED","Current address:"+finalAddress);
+		} catch (IOException e) {
+			Log.d("LOCATION IDENTIFIED","failed");
+		}
+		  catch (NullPointerException e) {}
+		
 		debugText.setText("Current location:"+ String.format ("%s",latitude)+ " "+String.format ("%s",longitude));
 //		if(finalAddress != "")
 //			debugText.setText(debugText.getText() + "/n" + finalAddress);
@@ -1028,7 +1042,31 @@ private boolean updateMapWithPointsFromMemory() {
 		
 		if(isNew)
 		{
-			//add network with information to currentnetworka and update database
+			//add network with information to currentnetworks and update database
+			
+			
+			//add city name and post code
+			Geocoder geoCoder = new Geocoder(this, Locale.getDefault());
+			StringBuilder builder = new StringBuilder();
+			String finalAddress = "";
+			try {
+			    List<Address> address = geoCoder.getFromLocation(newNetwork.getLat(), newNetwork.getLng(), 1);
+			    int maxLines = address.get(0).getMaxAddressLineIndex();
+			    for (int i=0; i<maxLines; i++) {
+			    String addressStr = address.get(0).getPostalCode()+"-"+address.get(0).getLocality();
+			    builder.append(addressStr);
+			    }
+
+			finalAddress = builder.toString(); //includes postal code and city name in format "xxxxx-cityname"
+			//Log.d("LOCATION IDENTIFIED","Current address:"+finalAddress);
+			} catch (IOException e) {
+				//Log.d("LOCATION IDENTIFIED","failed");
+			}
+			  catch (NullPointerException e) {}
+			
+			if(!finalAddress.equals(""))
+				newNetwork.setCityName(finalAddress);
+			
 			currentNetworks.add(newNetwork);
 			//mix color for newly added network
 			int mixNewColor=Color.argb(255, (int)(Math.random()*200 + 55), (int)(Math.random()*200 + 55), (int)(Math.random()*200 + 55));
@@ -1038,7 +1076,7 @@ private boolean updateMapWithPointsFromMemory() {
 			if(!db.isDBempty())
 				databaseState=1;
 			
-			debugText.setText("Added new network to DATABASE and WORKINGSET " +newNetwork.getSSID()+ " on location:"+newNetwork.getLocation());
+			debugText.setText("Added new network to DATABASE and WORKINGSET " +newNetwork.getSSID()+ " on location:"+newNetwork.getLocation()+ " in city: "+ newNetwork.getCityName());
 			addPointsOnCurrentLocation();
 		}
 		
@@ -1121,6 +1159,27 @@ private boolean updateMapWithPointsFromMemory() {
 
 		    	}
 		    }
+		    
+		    Geocoder geoCoder = new Geocoder(this, Locale.getDefault());
+			StringBuilder builder = new StringBuilder();
+			String finalAddress = "";
+			try {
+			    List<Address> address = geoCoder.getFromLocation(lat1, lon1, 4);
+			    int maxLines = address.get(0).getMaxAddressLineIndex();
+			    for (int i=0; i<maxLines; i++) {
+			    String addressStr = address.get(0).getAddressLine(i);
+			    builder.append(addressStr);
+			    builder.append(i+". ");
+			    }
+			    builder.append(" Postal code:" +address.get(0).getPostalCode());
+			    builder.append(" City name:" + address.get(0).getLocality());
+
+			finalAddress = builder.toString(); //This is the complete address.
+			Log.d("LOCATION IDENTIFIED","Current address:"+finalAddress);
+			} catch (IOException e) {
+				Log.d("LOCATION IDENTIFIED","failed");
+			}
+			  catch (NullPointerException e) {}
 		    
 		    
 		}
@@ -1210,11 +1269,15 @@ private boolean updateMapWithPointsFromMemory() {
 	    	
 	    	if(DISPLAY_MODE == 2){
 	    		
-		    	int howManyToAdd= (int)(Math.random()*15)+1;
+		    	int howManyToAdd= (int)(Math.random()*50)+1;
 		    	
 				String bssid,ssid,city;
 				int freq,alive,newpoints;
 				float startLat,startLng,latitude,longitude,accuracy,signal;
+				
+				LatLngBounds findDisplayCenter = mMap.getProjection().getVisibleRegion().latLngBounds;;
+				
+				
 				
 				LatLng approxCoordinates;
 				LatLng ntwkPntGPS;
@@ -1230,8 +1293,11 @@ private boolean updateMapWithPointsFromMemory() {
 					freq= i%3;//(int)(Math.random()*14);
 					alive=( i%4==3 ? 0:1 );
 					
-					startLat =46.042931f +(float)(Math.random()*0.011);
-					startLng =14.487516f +(float)(Math.random()*0.011);
+					
+					
+					
+					startLat = (float)findDisplayCenter.getCenter().latitude +(float)(Math.random()*0.002*howManyToAdd);
+					startLng =(float)findDisplayCenter.getCenter().longitude +(float)(Math.random()*0.002*howManyToAdd);
 					approxCoordinates = new LatLng(startLat, startLng);
 					
 					

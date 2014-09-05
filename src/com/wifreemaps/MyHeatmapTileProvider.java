@@ -53,8 +53,11 @@ public class MyHeatmapTileProvider implements TileProvider {
      * Array of colors, represented by ints.
      */
     private static final int[] DEFAULT_GRADIENT_COLORS = {
-        Color.rgb(102, 225, 0),
-        Color.rgb(255, 0, 0)
+    	Color.rgb(255, 162, 56),
+    	Color.rgb(56, 165, 255),
+    	Color.rgb(73, 255, 56)
+        
+        
     };
 
     /**
@@ -63,7 +66,7 @@ public class MyHeatmapTileProvider implements TileProvider {
      * These should be a sorted array of floats in the interval [0, 1].
      */
     private static final float[] DEFAULT_GRADIENT_START_POINTS = {
-        0.2f, 1f
+        0.1f, 0.5f , 0.9f
     };
 
     /**
@@ -106,7 +109,7 @@ public class MyHeatmapTileProvider implements TileProvider {
     /**
      * Minimum radius value.
      */
-    private static final int MIN_RADIUS = 10;
+    private static final int MIN_RADIUS = 15;
 
     /**
      * Maximum radius value.
