@@ -14,7 +14,7 @@ import android.database.sqlite.SQLiteOpenHelper;
 import android.util.Log;
 
 public class MySQLiteHelper extends SQLiteOpenHelper{
-	private static final int DATABASE_VERSION = 16;
+	private static final int DATABASE_VERSION = 1;
 	private static final String DATABASE_NAME = "OpenNetworkDB";
 	
 	

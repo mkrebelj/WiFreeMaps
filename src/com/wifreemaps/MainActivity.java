@@ -2,6 +2,7 @@ package com.wifreemaps;
 
 import java.io.IOException;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Locale;
 
@@ -16,6 +17,17 @@ import com.google.android.gms.maps.model.BitmapDescriptorFactory;
 import com.google.android.gms.maps.model.CameraPosition;
 import com.google.android.gms.maps.model.GroundOverlayOptions;
 import com.google.android.gms.maps.model.LatLng;
+import com.google.android.gms.maps.model.LatLngBounds;
+import com.google.android.gms.maps.model.TileOverlay;
+import com.google.android.gms.maps.model.TileOverlayOptions;
+import com.google.maps.android.MarkerManager.Collection;
+import com.google.maps.android.heatmaps.Gradient;
+
+import com.google.maps.android.heatmaps.WeightedLatLng;
+
+
+
+
 import android.location.Address;
 import android.location.Criteria;
 import android.location.Geocoder;
@@ -46,21 +58,39 @@ import android.os.Looper;
 
 
 import android.support.v4.app.FragmentActivity;
+import android.text.method.LinkMovementMethod;
 import android.text.method.ScrollingMovementMethod;
 import android.util.Log;
 import android.view.Menu;
 import android.view.MenuItem;
+import android.view.View;
 import android.widget.TextView;
+import android.widget.Toast;
+
+
+
+import com.google.maps.android.heatmaps.HeatmapTileProvider.Builder;
+
+
+
 
 public class MainActivity extends FragmentActivity {
+	
+	
+	private static final int DISPLAY_MODE=2; //1= my custom method; 2= heatmaps
+	
+	
 	private static GoogleMap mMap = null;
 	private static Handler handler = new Handler(Looper.getMainLooper());
 	private float currentZoomLevel;
+	private boolean zoomingIn = true;
+	private boolean detailedView = false, detailedViewLoaded = false;
 	private List<String> uniqueNetworks=new ArrayList<String>();
 	private List<Integer> networkColors = new ArrayList<Integer>();
 	private List<NetworkMarking> drawableNetworkMarkings = new ArrayList<NetworkMarking>();
 	private List<NetworkPoint> allAvailableNetworkPoints = new ArrayList<NetworkPoint>();
-	
+	private ArrayList<LatLng> networkPointsInRange = new ArrayList<LatLng>();
+	private LatLngBounds curScreen;
 	
 	public static final String PSK = "PSK";
     public static final String WEP = "WEP";
@@ -71,7 +101,7 @@ public class MainActivity extends FragmentActivity {
 	//statics
     private static final int TIME_BETWEEN_ADDING_NEW_POINT=15000; //how often can system add new point to data
     private static final int TIME_FOR_MAP_UPDATE=10000; //map update rate
-	
+	private boolean newPointDetected = false;
 
 	TextView mainText;
 	TextView debugText;
@@ -89,20 +119,72 @@ public class MainActivity extends FragmentActivity {
 	private double currentGPSAccuracy=50;
 	private List <OpenNetwork> networksInRange=new ArrayList<OpenNetwork>();
 	
+	
 	List<OpenNetwork> currentNetworks=new ArrayList<OpenNetwork>();
 	List<NetworkPoint> networkPoints=new ArrayList<NetworkPoint>();
-
+	
+	ArrayList<LatLng> currentNetworkPointsForHeatmaps = new ArrayList<LatLng>();
+	
 	//simulate adding new points with this handler
-	private int mInterval = 5000; // 5 seconds by default, can be changed later
+	private int mInterval = 10000; // 5 seconds by default, can be changed later
 	private Handler mHandler;
 	private long lastRefreshTime;
 	private long lastMapRefresh;
 	
 	double lat1,lon1;
 	
-	
+	//NOVO
+	 /**
+     * Alternative radius for convolution
+     */
+	private static final int ALT_HEATMAP_RADIUS_20 = 20;
+    private static final int ALT_HEATMAP_RADIUS_19 = 30;
+    private static final int ALT_HEATMAP_RADIUS_18 = 40;
+    private static final int ALT_HEATMAP_RADIUS_17 = 55;
+    private static final int ALT_HEATMAP_RADIUS_16 = 75;
+    private static final int ALT_HEATMAP_RADIUS_15 = 110;
+    private static final int ALT_HEATMAP_RADIUS_14 = 160;
+    private static final int ALT_HEATMAP_RADIUS_13 = 199;
+    
+    
 
+    /**
+     * Alternative opacity of heatmap overlay
+     */
+    private static final double ALT_HEATMAP_OPACITY = 0.4;
 
+    /**
+     * Alternative heatmap gradient (blue -> red)
+     * Copied from Javascript version
+     */
+    private static final int[] ALT_HEATMAP_GRADIENT_COLORS = {
+            Color.argb(0, 0, 255, 255),// transparent
+            Color.argb(255 / 3 * 2, 0, 255, 255),
+            Color.rgb(0, 191, 255),
+            Color.rgb(0, 0, 127),
+            Color.rgb(255, 0, 0)
+    };
+
+    public static final float[] ALT_HEATMAP_GRADIENT_START_POINTS = {
+            0.0f, 0.10f, 0.20f, 0.60f, 1.0f
+    };
+
+    public static final Gradient ALT_HEATMAP_GRADIENT = new Gradient(ALT_HEATMAP_GRADIENT_COLORS,
+            ALT_HEATMAP_GRADIENT_START_POINTS);
+    private MyHeatmapTileProvider mProvider;
+    private TileOverlay mOverlay;
+	boolean alreadyAdded=false;
+	private boolean mDefaultGradient = true;
+    private boolean mDefaultRadius = true;
+    private boolean mDefaultOpacity = true;
+    private HashMap<String, DataSet> mLists = new HashMap<String, DataSet>();
+
+    protected int getLayoutId() {
+        return R.layout.activity_main;
+    }
+    
+    
+    
 	@Override
 	protected void onCreate(Bundle savedInstanceState) {
 		super.onCreate(savedInstanceState);
@@ -111,7 +193,7 @@ public class MainActivity extends FragmentActivity {
 		mHandler = new Handler();
 
 		mMap=((MapFragment) getFragmentManager().findFragmentById(R.id.map)).getMap();
-		mMap.setMapType(GoogleMap.MAP_TYPE_HYBRID);
+		mMap.setMapType(GoogleMap.MAP_TYPE_NORMAL);
 		mMap.setMyLocationEnabled(true);
 
 		mMap.setOnCameraChangeListener(new OnCameraChangeListener() {
@@ -120,50 +202,30 @@ public class MainActivity extends FragmentActivity {
 			public void onCameraChange(CameraPosition position) {
 				if (position.zoom != currentZoom){
 					currentZoom = position.zoom;  // here you get zoom level
+					
+					
 
 					Log.d("CurrentZoomLevel","LVL:"+currentZoom);
+					if(currentZoomLevel > currentZoom)
+						zoomingIn=false;
+					else
+						zoomingIn=true;
 					currentZoomLevel=currentZoom;
 					
-					if(currentZoom > 19)
-					{	//FOR zoom levels 20 and 21
-						//SHOW MOST DETAILED VIEW
-						
-					}
-					else if(currentZoom == 19)
-					{
-						//First simplified shape of network, expect up to 10 networks
-					}
-					else if(currentZoom == 18)
-					{
-						//second simplified view of network, up to 30 networks
-					}
-					else if(currentZoom == 17)
-					{
-						//Every network is represented with colored circle
-					}
-					else if(currentZoom == 16)
-					{
-						//Every network is a single spot/dot
-					}
-					else if(currentZoom == 15)
-					{
-						//group up to 10 networks in single circle
-					}
-					else if(currentZoom == 14)
-					{
-						//goup all networks into 6 areas with networks, circles or something
-					}
-					else if(currentZoom < 14)
-					{
-						//group networks that are more than x meters(7x7 grid to zoom, center is average position = average position) apart into dots
-					}
+					
+					curScreen = mMap.getProjection().getVisibleRegion().latLngBounds;
+					
+					Log.d("CURRENTSCREENBOUNDS", curScreen.toString());
+					
+					showSimplifiedNetworkInViewport();
+					
 				}
 			}
 
 		});
 
 		//SETUP
-		myCurrentLocation = new LatLng(10, 10);
+		myCurrentLocation = new LatLng(41.903616, 12.465888); //for historic reasons, Rome is the center of the world
 		lastRefreshTime=System.currentTimeMillis();
 		
 		//VIEWS
@@ -235,18 +297,7 @@ public class MainActivity extends FragmentActivity {
 		//add something to database
 
 		if(db.isDBempty()){
-			//addSomeData();
-//			handler.post(new Runnable(){
-//
-//				@Override
-//				public void run() {
-//					// TODO Auto-generated method stub
-//					dataHandler.addSamplePointsToDatabase(getBaseContext());
-//			    	databaseState=1;
-//					
-//				} 
-//				  
-//				});
+			databaseState = 0;
 		}
 		else
 			databaseState = 1;
@@ -258,24 +309,12 @@ public class MainActivity extends FragmentActivity {
 		handler.post(new Runnable(){
 
 			@Override
-			public void run() {
-				// TODO Auto-generated method stub
-//				while (databaseState != 1)
-//				{
-//					try {
-//						Thread.sleep(200);
-//					} catch (InterruptedException e) {
-//						// TODO Auto-generated catch block
-//						e.printStackTrace();
-//					}
-//				}
-				
-				
-				//lalallalala
-				
+			public void run() {	
+
+				//load initial data from database
 				if(databaseState != 0)
 				{
-					updateMapWithPoints();
+					updateMapWithPointsFromDatabase();
 					handler.post(new Runnable(){
 
 						@Override
@@ -284,42 +323,23 @@ public class MainActivity extends FragmentActivity {
 							//now focus on average point
 							LatLng locationtocenter = findCenterPoint();
 							mMap.animateCamera(CameraUpdateFactory.newLatLngZoom(locationtocenter, 19.0f));
+							
+			                
+			               
 						}
 					});
 				}
 				
 				
 				
-				//lalalla
-				
-//				updateMapWithPoints();
-//				handler.post(new Runnable(){
-//
-//					@Override
-//					public void run() {
-//						try {
-//							Thread.sleep(500);
-//						} catch (InterruptedException e) {
-//							// TODO Auto-generated catch block
-//							e.printStackTrace();
-//						}
-//						//now focus on average point
-//						LatLng locationtocenter = findCenterPoint();
-//						mMap.animateCamera(CameraUpdateFactory.newLatLngZoom(locationtocenter, 19.0f));
-//				}
-//				});
+
 				
 				
 			} 
-			   // your UI code here 
+			   
 			});
-		//updateMap(); //in seperate thread
-//		updateMapWithPoints();
+		
 
-
-		//simulate adding new point every second or so - not very good
-		//        mHandler = new Handler();
-		//        startRepeatingTask();
 
 		//for debugging 
 		receiverWifi = new WifiReceiver();
@@ -333,134 +353,339 @@ public class MainActivity extends FragmentActivity {
 		
 		startRepeatingTask();
 
-
+		
 
 	}
 
-	private boolean updateMapWithPoints() {
-		
+	protected void showSimplifiedNetworkInViewport() {
+		// TODO Auto-generated method stub
 		
 
+//		if(currentZoomLevel == 15)
+//		{
+//			
+//			//group up to 10 networks in single circle
+//		}
+//		else if(currentZoomLevel == 14)
+//		{
+//			
+//			//goup all networks into 6 areas with networks, circles or something
+//		}
+//		else if(currentZoomLevel < 14)
+//		{
+//			
+//			//group networks that are more than x meters(7x7 grid to zoom, center is average position = average position) apart into dots
+//		}
+//		
+		if(DISPLAY_MODE == 2)
+		{
+		
+			//put this to different thread, so it would not crash
+			
+			
+			
+			handler.post(new Runnable(){
+
+				@Override
+				public void run() {	
+					
+					
+
+					if(currentZoomLevel <= 17 && !zoomingIn)
+					{
+						detailedView=false;
+						detailedViewLoaded = false;
+						//Only one point for whole network
+						networkPointsInRange.clear();
+						for(OpenNetwork ntwk : currentNetworks)
+						{
+							if(curScreen.contains(ntwk.getLocationAsCoordinate()))
+							{
+								
+								networkPointsInRange.add(ntwk.getLocationAsCoordinate());
+								newPointDetected = true;
+								
+								
+							}
+						}
+						currentNetworkPointsForHeatmaps = networkPointsInRange;
+						updateMapWithPointsFromMemory();
+					}
+					else if(currentZoomLevel > 17 )
+					{
+						detailedView=true;
+						if(!detailedViewLoaded){
+							networkPointsInRange.clear();
+							for(OpenNetwork ntwk : currentNetworks){
+	
+								
+	
+								if(curScreen.contains(ntwk.getLocationAsCoordinate()))
+								{
+									for(NetworkPoint point : allAvailableNetworkPoints)
+									{
+										if(point.getBSSID().equals(ntwk.getBSSID())){
+											networkPointsInRange.add(point.getLocation());
+											newPointDetected = true;
+										}
+											
+									}
+								}
+							}	
+							detailedViewLoaded = true;
+							currentNetworkPointsForHeatmaps = networkPointsInRange;
+							updateMapWithPointsFromMemory();
+						}
+						
+						
+					}
+					
+					}
+
+				});
+			
+			
+			
+			
+		}
+		
+	}
+
+
+
+	/**
+	 * @return Returns true if reading from database is successful
+	 */
+	private boolean updateMapWithPointsFromDatabase() {
+		
+		
 		Log.d("UPDATING MAP","points should be added");
 		Log.d("UPDATING WITH ZOOM LEVEL:","ZOOMLVL:"+currentZoomLevel);
 		
-		if(databaseState != 0) {
+		
+		
+		switch(DISPLAY_MODE)
+		{
+		case 1:
+		{
+			if(databaseState != 0) {
 
 
-			currentNetworks = db.getAllNetworks();
-			//List<OpenNetwork> currentNetworkPoints = new ArrayList<OpenNetwork>();
+				currentNetworks = db.getAllNetworks();
+				//List<OpenNetwork> currentNetworkPoints = new ArrayList<OpenNetwork>();
 
-			//ADD GROUND OVERLAY which represents wifi network
-			Bitmap radiusImageSource=BitmapFactory.decodeResource(getResources(), R.drawable.fadingout);
+				
+				
+				//MY method for drawing onto map
+				//ADD GROUND OVERLAY which represents wifi network
+				Bitmap radiusImageSource=BitmapFactory.decodeResource(getResources(), R.drawable.fadingout);
 
 
-			Log.d("UPDATING MAP","searching for networks in database");
+				Log.d("UPDATING MAP","searching for networks in database");
 
 
-			//count different newtorks and mix some colors. Add new networks to current map if necessary
-			for(OpenNetwork ntwk : currentNetworks)
-			{
-				if(! uniqueNetworks.contains(ntwk.getBSSID()) )
+				//count different newtorks and mix some colors. Add new networks to current map if necessary
+				for(OpenNetwork ntwk : currentNetworks)
 				{
-					uniqueNetworks.add(ntwk.getBSSID());
-					int mixNewColor=Color.argb(255, (int)(Math.random()*200 + 55), (int)(Math.random()*200 + 55), (int)(Math.random()*200 + 55));
-					networkColors.add(mixNewColor);
-					Log.d("UPDATING MAP","added new unique network and color");
-				}
-				
-			}
-
-			
-			
-			//different zoom levels require different markings
-			if(currentZoomLevel > 19)
-			{	//FOR zoom levels 20 and 21
-				//SHOW MOST DETAILED VIEW
-				
-				
-				
-				
-				
-				
-				
-			}
-			else if(currentZoomLevel == 19)
-			{
-				//First simplified shape of network, expect up to 10 networks
-			}
-			else if(currentZoomLevel == 18)
-			{
-				//second simplified view of network, up to 30 networks
-			}
-			else if(currentZoomLevel == 17)
-			{
-				//Every network is represented with colored circle
-			}
-			else if(currentZoomLevel == 16)
-			{
-				//Every network is a single spot/dot
-			}
-			else if(currentZoomLevel == 15)
-			{
-				//group up to 10 networks in single circle
-			}
-			else if(currentZoomLevel == 14)
-			{
-				//goup all networks into 6 areas with networks, circles or something
-			}
-			else if(currentZoomLevel < 14)
-			{
-				//group networks that are more than x meters(7x7 grid to zoom, center is average position = average position) apart into dots
-			}
-			
-			
-			//draw this points with corresponding colors
-			
-			
-			
-			
-			
-			Log.d("UPDATING MAP","about to draw points on map");
-			for(String bssid : uniqueNetworks)
-			{
-				
-				
-				BitmapDescriptor radiusImage=GetCustomBitmapDescriptor(radiusImageSource, networkColors.get(uniqueNetworks.indexOf(bssid)));
-
-
-				db=new MySQLiteHelper(this);
-				networkPoints=db.getNetworkPoints(bssid);
-				
-				
-				
-				com.google.maps.android.heatmaps.HeatmapTileProvider ddd =
-				
-				float pointIntensity=0;
-				for(NetworkPoint point: networkPoints)
-				{
-					pointIntensity=0.9f-(float)point.getQuality();
+					if(! uniqueNetworks.contains(ntwk.getBSSID()) )
+					{
+						uniqueNetworks.add(ntwk.getBSSID());
+						int mixNewColor=Color.argb(255, (int)(Math.random()*200 + 55), (int)(Math.random()*200 + 55), (int)(Math.random()*200 + 55));
+						networkColors.add(mixNewColor);
+						Log.d("UPDATING MAP","added new unique network and color");
+					}
 					
-					GroundOverlayOptions openWifiSpot = new GroundOverlayOptions()
-					.image(radiusImage)
-					.position(point.getLocation(), (float)point.getGpsAccuracy(), (float)point.getGpsAccuracy()) //Na tem mestu poraèunati natanènost in sinhronizirati z velikostjo
-					.transparency(pointIntensity); //odvisno od kvalitete signala pobarvati med 0 in 1, izdelati naèin da se porazdeli na prostor- > (moc.signala/max.moc)/povrsina
-					mMap.addGroundOverlay(openWifiSpot);
-					Log.d("Point quality:",point.getQuality()+"");
 				}
-				Log.d("WIFIADDED on MAP"," bssid:"+bssid);
+
+				
+				
+				
+				
+				Log.d("UPDATING MAP","about to draw points on map");
+				
+				allAvailableNetworkPoints.clear();
+				
+				for(String bssid : uniqueNetworks)
+				{
+					
+					
+					BitmapDescriptor radiusImage=GetCustomBitmapDescriptor(radiusImageSource, networkColors.get(uniqueNetworks.indexOf(bssid)));
+
+
+					db=new MySQLiteHelper(this);
+					networkPoints=db.getNetworkPoints(bssid);
+
+					
+					//TODO: poskusi razdelit toèke v velikostne razrede in dodaj veè razliènih moverlayev na mapo- z razliènmi velikostmi toèk
+					
+					
+					
+					float pointIntensity=0;
+					for(NetworkPoint point: networkPoints)
+					{
+						
+						//add every point to working set for later use
+						allAvailableNetworkPoints.add(point);
+						
+						pointIntensity=0.9f-(float)point.getQuality();
+						
+						GroundOverlayOptions openWifiSpot = new GroundOverlayOptions()
+						.image(radiusImage)
+						.position(point.getLocation(), (float)point.getGpsAccuracy(), (float)point.getGpsAccuracy()) //Na tem mestu poraèunati natanènost in sinhronizirati z velikostjo
+						.transparency(pointIntensity); //odvisno od kvalitete signala pobarvati med 0 in 1, izdelati naèin da se porazdeli na prostor- > (moc.signala/max.moc)/povrsina
+						mMap.addGroundOverlay(openWifiSpot);
+						Log.d("Point quality:",point.getQuality()+"");
+					}
+					Log.d("WIFIADDED on MAP"," bssid:"+bssid);
+				}
+				alreadyAdded=true;
 			}
-			//network image da pride ena slika namesto 30
-			NetworkMarking marking = new NetworkMarking(networkPoints, Color.CYAN);
-			
-			BitmapDescriptor networkImage= marking.returnNetworkMarkingAsImage(mMap);
-			
-			//test
 			return true;
 		}
-		Log.d("NODATATOADD","No data in database to add on map...");
-		return false;
+			
+			
+			
+		case 2:
+		{
+
+
+			//dodajanje heatmapsov
+
+			if(databaseState != 0) {
+
+				currentNetworks = db.getAllNetworks();
+				
+				//in case we would need all data from points
+				allAvailableNetworkPoints.clear();
+
+				for(OpenNetwork ntwk : currentNetworks)
+				{
+					networkPoints=db.getNetworkPoints(ntwk.getBSSID());
+					
+					for(NetworkPoint point:networkPoints)
+					{
+						allAvailableNetworkPoints.add(point);
+						currentNetworkPointsForHeatmaps.add(point.getLocation());
+					}
+					
+				}
+
+				
+
+				mLists.clear();
+				mLists.put("WifiTocke", new DataSet( currentNetworkPointsForHeatmaps,
+						"fakeurl"));
+				mProvider = new MyHeatmapTileProvider.Builder().data(
+						mLists.get("WifiTocke").getData()).build();
+
+				mOverlay = mMap.addTileOverlay(new TileOverlayOptions().tileProvider(mProvider));
+				mOverlay.clearTileCache();
+			}
+		}
+			
+		default:
+			Log.d("NODATATOADD","No data in database to add on map...");
+			return false;
+		}
+		
+
+
+
 	}
 
+	
+	
+	
+	
+private boolean updateMapWithPointsFromMemory() {
+	
+		//data is already in memory, no need to read from database
+		
+	
+		Log.d("UPDATING MAP","points should be added");
+		Log.d("UPDATING WITH ZOOM LEVEL:","ZOOMLVL:"+currentZoomLevel);
+		
+		
+		
+		switch(DISPLAY_MODE)
+		{
+		case 1:
+		{
+
+			if(newPointDetected){
+				//ADD GROUND OVERLAY which represents wifi network
+				Bitmap radiusImageSource=BitmapFactory.decodeResource(getResources(), R.drawable.fadingout);
+
+
+				Log.d("UPDATING MAP","searching for networks in working memory");
+
+				
+				Log.d("UPDATING MAP","about to draw points on map");
+				for(String bssid : uniqueNetworks)
+				{
+
+					BitmapDescriptor radiusImage=GetCustomBitmapDescriptor(radiusImageSource, networkColors.get(uniqueNetworks.indexOf(bssid)));
+
+					networkPoints.clear();
+					for(NetworkPoint point:allAvailableNetworkPoints)
+					{
+						if(point.getBSSID().equals(bssid))
+							networkPoints.add(point);
+					}
+					
+					float pointIntensity=0;
+					for(NetworkPoint point: networkPoints)
+					{
+						pointIntensity=0.9f-(float)point.getQuality();
+						
+						GroundOverlayOptions openWifiSpot = new GroundOverlayOptions()
+						.image(radiusImage)
+						.position(point.getLocation(), (float)point.getGpsAccuracy(), (float)point.getGpsAccuracy()) //Na tem mestu poraèunati natanènost in sinhronizirati z velikostjo
+						.transparency(pointIntensity); //odvisno od kvalitete signala pobarvati med 0 in 1, izdelati naèin da se porazdeli na prostor- > (moc.signala/max.moc)/povrsina
+						mMap.addGroundOverlay(openWifiSpot);
+						Log.d("Point quality:",point.getQuality()+"");
+					}
+					Log.d("WIFIADDED on MAP from Memory"," bssid:"+bssid);
+				}
+				newPointDetected=false;
+				return true;
+				}
+			}
+			
+		
+		
+			
+			
+			
+		case 2:
+		{
+
+
+			//dodajanje heatmapsov
+
+			if(newPointDetected)
+			{
+			
+				mLists.clear();
+				mLists.put("WifiTocke", new DataSet( currentNetworkPointsForHeatmaps,
+						"fakeurl"));
+				mProvider = new MyHeatmapTileProvider.Builder().data(
+						mLists.get("WifiTocke").getData()).build();
+
+				mOverlay = mMap.addTileOverlay(new TileOverlayOptions().tileProvider(mProvider));
+				mOverlay.clearTileCache();
+				
+				newPointDetected=false;
+				return true;
+			}
+			
+		}
+			
+		default:
+			Log.d("NODATATOADD","No new data to add on map...");
+			return false;
+		}
+}
 	
 	
 	
@@ -496,7 +721,7 @@ public class MainActivity extends FragmentActivity {
 	public boolean onCreateOptionsMenu(Menu menu) {
 		menu.add(0, 0, 0, "Refresh");
 		menu.add(1,1,1,"Show Networks");
-		
+		menu.add(2,2,2,"Add Dummy Data");
 		return super.onCreateOptionsMenu(menu);
 	}
 
@@ -511,6 +736,13 @@ public class MainActivity extends FragmentActivity {
 		{
 			Intent intent=new Intent(getBaseContext(), ShowNetworksActivity.class);
 			startActivity(intent);
+		}
+		else if(selected == 2)
+		{
+			//add some dummy data to database
+			int newDummyNetworkCount = addDummyData();
+			Toast.makeText(this, "Added "+newDummyNetworkCount+ " dummy points to database", Toast.LENGTH_SHORT).show();
+			
 		}
 		Log.d("ITEM ID:",item.getItemId()+" pressed");
 		return super.onMenuItemSelected(featureId, item);
@@ -632,69 +864,8 @@ public class MainActivity extends FragmentActivity {
 	}
 
 
-	private GroundOverlayOptions[] getAllKnownPoints(int size, int wificolor, float GPSlat, float GPSlon){
-		GroundOverlayOptions[] result = new GroundOverlayOptions[size];
-
-
-
-		//ADD GROUND OVERLAY which represents wifi network
-		Bitmap radiusImageSource=BitmapFactory.decodeResource(getResources(), R.drawable.circles);
-		//ADD SOME COLOR   
-		BitmapDescriptor radiusImage=GetCustomBitmapDescriptor(radiusImageSource, wificolor);
-
-		// IJS coordinates 46.042931, 14.487516
-		float lat=GPSlat;
-		float lon=GPSlon;
-		float addLat,addLon;
-		LatLng WifiLocation = null;
-		float wifiPower = 0.0f;
-		float gpsAccuracy= 0.0f;
-
-
-		//TODO: recover points from database in the future
-		for(int i=0; i < result.length; i++)
-		{
-			//read
-			if(Math.random() > 0.5)
-				addLat=(float)(Math.random()*0.0001);
-			else
-				addLat=(float) (Math.random()*0.0001)*-1;
-			if(Math.random() > 0.5)
-				addLon=(float)(Math.random()*0.0001);
-			else
-				addLon=(float)(Math.random()*0.0001)*-1;
-
-			WifiLocation =  new LatLng(lat+addLat, lon+addLon);
-			gpsAccuracy = (float) (Math.random()*20)+1.0f;
-			wifiPower = 0.9f - (float) (Math.random() / gpsAccuracy); //1.0 means no signal at all, 0 means full power
-			//end read
-
-			result[i] = new GroundOverlayOptions()
-			.image(radiusImage)
-			.position(WifiLocation, gpsAccuracy, gpsAccuracy) //Na tem mestu poraèunati natanènost in sinhronizirati z velikostjo
-			.transparency(wifiPower); //odvisno od kvalitete signala pobarvati med 0 in 1, izdelati naèin da se porazdeli na prostor- > (moc.signala/max.moc)/povrsina
-
-		}
-
-		return result;
-	}
-
-
 	
-
-//	private void addNewPoint()
-//	{
-//
-//		float lat=46.042931f;
-//		float lon=14.487516f;
-//		GroundOverlayOptions[] allKnownPoints = new GroundOverlayOptions[20];
-//		allKnownPoints = getAllKnownPoints(allKnownPoints.length, Color.MAGENTA,lat,lon);
-//		//System.out.println("Adding some data to map...");
-//		for(int i= 0; i < allKnownPoints.length;i++)
-//		{
-//			mMap.addGroundOverlay(allKnownPoints[i]);
-//		}
-//	}
+	
 	
 	
 	
@@ -756,7 +927,18 @@ public class MainActivity extends FragmentActivity {
 						normalisedLevel=(-35.0f/(ntwkScan.level))/currentGPSAccuracy*1.0f *10;
 						Log.d("NormalisedLevelForAddedPoint:",""+normalisedLevel);
 						NetworkPoint newPoint=new NetworkPoint(ntwkScan.BSSID,myCurrentLocation,normalisedLevel,currentGPSAccuracy,ntwkScan.timestamp);
-						db.addNetworkPoint(newPoint);
+						
+						//check if point already exists on this exact location. Add if not and replace if accuracy is better
+						if(!networkPointAlreadyExistsOnLocation(newPoint))
+						{
+							db.addNetworkPoint(newPoint);
+							//add data to current working memory
+							updateCurrentData(newPoint);
+							Log.d("ADDPOINT", "success");
+						}
+						else
+							Log.d("ADDPOINT", "failed");
+						
 					}
 
 				}
@@ -775,7 +957,7 @@ public class MainActivity extends FragmentActivity {
 	      {
 	         // Do something knowing the location changed by the distance you requested
 	    	  Log.d("LocationChanged","Current:"+loc.getLatitude()+" "+loc.getLongitude());
-	    	  currentGPSAccuracy=loc.getAltitude();
+	    	  currentGPSAccuracy=loc.getAccuracy();
 	    	  findCurrentLocation(loc.getLatitude(),loc.getLongitude());
 	    	  addPointsOnCurrentLocation();
 	      }
@@ -848,11 +1030,15 @@ public class MainActivity extends FragmentActivity {
 		{
 			//add network with information to currentnetworka and update database
 			currentNetworks.add(newNetwork);
-			db.addNetwork(newNetwork);
+			//mix color for newly added network
+			int mixNewColor=Color.argb(255, (int)(Math.random()*200 + 55), (int)(Math.random()*200 + 55), (int)(Math.random()*200 + 55));
+    		networkColors.add(mixNewColor);
+			
+    		db.addNetwork(newNetwork);
 			if(!db.isDBempty())
 				databaseState=1;
 			
-			debugText.setText("Added new network " +newNetwork.getSSID()+ " on location:"+newNetwork.getLocation());
+			debugText.setText("Added new network to DATABASE and WORKINGSET " +newNetwork.getSSID()+ " on location:"+newNetwork.getLocation());
 			addPointsOnCurrentLocation();
 		}
 		
@@ -866,9 +1052,9 @@ public class MainActivity extends FragmentActivity {
 	    	//_getLocation();
 	      if(lastMapRefresh - System.currentTimeMillis() < TIME_FOR_MAP_UPDATE){
 	    	  Log.d("CLEAR_MAP","Try to clear map...");
-	    	  mMap.clear();
+	    	  //mMap.clear();
 	    	  Log.d("CLEAR MAP","map was cleared");
-		      if(updateMapWithPoints())
+		      if(updateMapWithPointsFromMemory())
 		    	  Log.d("UPDATE MAP", "success"); //this function can change value of mInterval.
 		      else
 		    	  Log.d("UPDATE MAP", "failed");
@@ -939,7 +1125,165 @@ public class MainActivity extends FragmentActivity {
 		    
 		}
 	  
-	 
-	  
+	  //NOVO
+	  public void changeRadius(View view) {
+	        if (mDefaultRadius) {
+	            mProvider.setRadius(ALT_HEATMAP_RADIUS_19);
+	        } else {
+	            mProvider.setRadius(MyHeatmapTileProvider.DEFAULT_RADIUS);
+	        }
+	        mOverlay.clearTileCache();
+	        mDefaultRadius = !mDefaultRadius;
+	    }
+
+	    public void changeGradient(View view) {
+	        if (mDefaultGradient) {
+	            mProvider.setGradient(ALT_HEATMAP_GRADIENT);
+	        } else {
+	            mProvider.setGradient(MyHeatmapTileProvider.DEFAULT_GRADIENT);
+	        }
+	        mOverlay.clearTileCache();
+	        mDefaultGradient = !mDefaultGradient;
+	    }
+
+	    public void changeOpacity(View view) {
+	        if (mDefaultOpacity) {
+	            mProvider.setOpacity(ALT_HEATMAP_OPACITY);
+	        } else {
+	            mProvider.setOpacity(MyHeatmapTileProvider.DEFAULT_OPACITY);
+	        }
+	        mOverlay.clearTileCache();
+	        mDefaultOpacity = !mDefaultOpacity;
+	    }
+	    private class DataSet {
+	        private ArrayList<LatLng> mDataset;
+	        private String mUrl;
+
+	        public DataSet(ArrayList<LatLng> dataSet, String url) {
+	            this.mDataset = dataSet;
+	            this.mUrl = url;
+	        }
+
+	        public ArrayList<LatLng> getData() {
+	            return mDataset;
+	        }
+
+	        public String getUrl() {
+	            return mUrl;
+	        }
+	    }
+	    
+	    private void updateCurrentData(NetworkPoint newPoint){
+	    	//add point to dataset for my display
+	    	
+	    	allAvailableNetworkPoints.add(newPoint);
+
+
+	    	//add point to dataset for heatmap
+	    	currentNetworkPointsForHeatmaps.add(newPoint.getLocation());
+	    	
+	    	//mark that there was some change in working memory
+	    	newPointDetected = true;
+	    	
+	    }
+	    
+	    private boolean networkPointAlreadyExistsOnLocation(NetworkPoint checkPoint)
+	    {
+	    	for(NetworkPoint point : allAvailableNetworkPoints)
+	    	{
+	    		if(checkPoint.getLocation().equals(point.getLocation()))
+	    		{
+	    			//if point on same location is fond, check if accuracy is any better
+	    			if(checkPoint.getGpsAccuracy() > point.getGpsAccuracy())
+	    				return true;
+	    		}
+	    			
+	    	}
+	    	return false;
+	    }
+	    
+	    
+	    private int addDummyData(){
+	    	
+			//add random number of networks to working set
+	    	//works only with mode 2
+	    	
+	    	if(DISPLAY_MODE == 2){
+	    		
+		    	int howManyToAdd= (int)(Math.random()*15)+1;
+		    	
+				String bssid,ssid,city;
+				int freq,alive,newpoints;
+				float startLat,startLng,latitude,longitude,accuracy,signal;
+				
+				LatLng approxCoordinates;
+				LatLng ntwkPntGPS;
+				
+				OpenNetwork newNetwork;
+				NetworkPoint newPoint;
+
+				for(int i = 0; i < howManyToAdd; i++)
+				{
+					//for each add from 5 to 15 new points
+					bssid="bssid"+i+"sample";
+					ssid="network"+i+"name";
+					freq= i%3;//(int)(Math.random()*14);
+					alive=( i%4==3 ? 0:1 );
+					
+					startLat =46.042931f +(float)(Math.random()*0.011);
+					startLng =14.487516f +(float)(Math.random()*0.011);
+					approxCoordinates = new LatLng(startLat, startLng);
+					
+					
+					
+					city ="fake ljubljana";
+					
+					Geocoder gcd = new Geocoder(getBaseContext(), Locale.getDefault());
+					try {
+						List<Address> addresses = gcd.getFromLocation(startLat, startLng, 1);
+						if (addresses.size() > 0) 
+						    city=addresses.get(0).getLocality();
+					} catch (IOException e) {
+						// TODO Auto-generated catch block
+						e.printStackTrace();
+					} 
+					//signal -35dbm(and higher) = 100%; -95dbm = 1%, linear
+					//accuracy is location in meters, 68% confidence that location is inside circle with r as accuracy: 
+					//accuracy of 4 means that location is roughly inside 8 meter of diameter
+					
+					newNetwork=new OpenNetwork(bssid, ssid, city, freq, approxCoordinates, alive);
+					//create network first
+					//db.addNetwork(newNetwork);
+					currentNetworks.add(newNetwork);
+					
+					newpoints=(int)(Math.random()*11)+5;
+
+					//create point
+					
+
+					for (int j = 0;j<newpoints;j++){
+
+						latitude = startLat + (float)(Math.random()*0.0001);
+						longitude = startLng +  +(float)(Math.random()*0.0001);
+						ntwkPntGPS = new LatLng(latitude, longitude);
+						accuracy = (int)(Math.random()*10+1);
+						signal = (float) (Math.random());
+						newPoint = new NetworkPoint(bssid, ntwkPntGPS, signal, accuracy, System.currentTimeMillis());
+						allAvailableNetworkPoints.add(newPoint);
+						currentNetworkPointsForHeatmaps.add(newPoint.getLocation());
+						//db.addNetworkPoint(newPoint);
+						
+					}
+
+				}
+				newPointDetected = true;
+		    	return howManyToAdd;
+	    		
+	    	}
+
+	    	return 0;
+
+	    }
+	    
 	  
 }
