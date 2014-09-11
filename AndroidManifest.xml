@@ -27,8 +27,7 @@
     <uses-permission android:name="com.wifreemaps.permission.MAPS_RECEIVE" />
 
     <uses-feature android:name="android.hardware.wifi" />
-    
-    
+
     <!-- For google maps -->
     <uses-feature
         android:glEsVersion="0x00020000"
@@ -48,16 +47,13 @@
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
         </activity>
-        <activity 
+        <activity
             android:name=".ShowNetworksActivity"
-            android:label="@string/networkListView">
-            
+            android:label="@string/networkListView" >
         </activity>
-        
-        <activity 
+        <activity
             android:name=".ShowNetworkDetails"
-            android:label="@string/networkDetails">
-            
+            android:label="@string/networkDetails" >
         </activity>
 
         <meta-data
@@ -70,6 +66,10 @@
         <activity
             android:name=".Reciever"
             android:label="@string/title_activity_reciever" >
+        </activity>
+        <activity
+            android:name=".SettingsActivity"
+            android:label="@string/title_activity_settings" >
         </activity>
     </application>
 

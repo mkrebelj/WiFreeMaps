@@ -50,6 +50,8 @@ import android.graphics.LightingColorFilter;
 import android.graphics.Matrix;
 import android.graphics.Paint;
 import android.location.LocationManager;
+import android.net.ConnectivityManager;
+import android.net.NetworkInfo;
 import android.net.wifi.ScanResult;
 import android.net.wifi.WifiManager;
 import android.os.Bundle;
@@ -86,12 +88,15 @@ public class MainActivity extends FragmentActivity {
 	private float currentZoomLevel;
 	private boolean zoomingIn = true;
 	private boolean detailedView = false, detailedViewLoaded = false;
+	private boolean somethingNewToAddToDatabase = false;
+	private long databaseLastUpdated = 0;
 	private List<String> uniqueNetworks=new ArrayList<String>();
 	private List<Integer> networkColors = new ArrayList<Integer>();
 	private List<NetworkMarking> drawableNetworkMarkings = new ArrayList<NetworkMarking>();
 	private List<NetworkPoint> allAvailableNetworkPoints = new ArrayList<NetworkPoint>();
 	private ArrayList<LatLng> networkPointsInRange = new ArrayList<LatLng>();
 	private LatLngBounds curScreen;
+	private static boolean inBackground=false;
 	
 	public static final String PSK = "PSK";
     public static final String WEP = "WEP";
@@ -100,6 +105,7 @@ public class MainActivity extends FragmentActivity {
 
 	
 	//statics
+    private static final int TIME_TO_WRITE_TO_DATABASE = 60000; //add data to database each 60 seconds
     private static final int TIME_BETWEEN_ADDING_NEW_POINT=15000; //how often can system add new point to data
     private static final int TIME_FOR_MAP_UPDATE=10000; //map update rate
 	private boolean newPointDetected = false;
@@ -123,6 +129,7 @@ public class MainActivity extends FragmentActivity {
 	
 	List<OpenNetwork> currentNetworks=new ArrayList<OpenNetwork>();
 	List<NetworkPoint> networkPoints=new ArrayList<NetworkPoint>();
+	List<NetworkPoint> pointsToAddToDatabase = new ArrayList<NetworkPoint>();
 	
 	ArrayList<LatLng> currentNetworkPointsForHeatmaps = new ArrayList<LatLng>();
 	
@@ -214,13 +221,15 @@ public class MainActivity extends FragmentActivity {
 					currentZoomLevel=currentZoom;
 					
 					
-					curScreen = mMap.getProjection().getVisibleRegion().latLngBounds;
 					
-					Log.d("CURRENTSCREENBOUNDS", curScreen.toString());
-					
-					showSimplifiedNetworkInViewport();
 					
 				}
+				curScreen = mMap.getProjection().getVisibleRegion().latLngBounds;
+				
+				Log.d("CURRENTSCREENBOUNDS", curScreen.toString());
+				
+				showSimplifiedNetworkInViewport();
+				
 			}
 
 		});
@@ -322,8 +331,9 @@ public class MainActivity extends FragmentActivity {
 						public void run() {
 							
 							//now focus on average point
-							LatLng locationtocenter = findCenterPoint();
-							mMap.animateCamera(CameraUpdateFactory.newLatLngZoom(locationtocenter, 19.0f));
+							
+							LatLng locationtocenter = myCurrentLocation;
+							mMap.animateCamera(CameraUpdateFactory.newLatLngZoom(locationtocenter, 14.0f));
 							
 			                
 			               
@@ -440,6 +450,27 @@ public class MainActivity extends FragmentActivity {
 						
 						
 					}
+					//just show points on map in current view port
+					else
+					{
+						detailedView=false;
+						detailedViewLoaded = false;
+						//Only one point for whole network
+						networkPointsInRange.clear();
+						for(OpenNetwork ntwk : currentNetworks)
+						{
+							if(curScreen.contains(ntwk.getLocationAsCoordinate()))
+							{
+								
+								networkPointsInRange.add(ntwk.getLocationAsCoordinate());
+								newPointDetected = true;
+								
+								
+							}
+						}
+						currentNetworkPointsForHeatmaps = networkPointsInRange;
+						updateMapWithPointsFromMemory();
+					}
 					
 					}
 
@@ -459,6 +490,8 @@ public class MainActivity extends FragmentActivity {
 	 */
 	private boolean updateMapWithPointsFromDatabase() {
 		
+		if(!inBackground){
+			
 		
 		Log.d("UPDATING MAP","points should be added");
 		Log.d("UPDATING WITH ZOOM LEVEL:","ZOOMLVL:"+currentZoomLevel);
@@ -590,7 +623,8 @@ public class MainActivity extends FragmentActivity {
 		}
 		
 
-
+		}
+		return false;
 
 	}
 
@@ -602,7 +636,7 @@ private boolean updateMapWithPointsFromMemory() {
 	
 		//data is already in memory, no need to read from database
 		
-	
+	if(!inBackground){
 		Log.d("UPDATING MAP","points should be added");
 		Log.d("UPDATING WITH ZOOM LEVEL:","ZOOMLVL:"+currentZoomLevel);
 		
@@ -696,6 +730,8 @@ private boolean updateMapWithPointsFromMemory() {
 			Log.d("NODATATOADD","No new data to add on map...");
 			return false;
 		}
+	}
+	return false;
 }
 	
 	
@@ -733,6 +769,7 @@ private boolean updateMapWithPointsFromMemory() {
 		menu.add(0, 0, 0, "Refresh");
 		menu.add(1,1,1,"Show Networks");
 		menu.add(2,2,2,"Add Dummy Data");
+		menu.add(3,3,3,"Settings");
 		return super.onCreateOptionsMenu(menu);
 	}
 
@@ -754,6 +791,12 @@ private boolean updateMapWithPointsFromMemory() {
 			int newDummyNetworkCount = addDummyData();
 			Toast.makeText(this, "Added "+newDummyNetworkCount+ " dummy points to database", Toast.LENGTH_SHORT).show();
 			
+		}
+		else if(selected == 3)
+		{
+			//Show options
+			Intent intent= new Intent(getBaseContext(), SettingsActivity.class);
+			startActivity(intent);
 		}
 		Log.d("ITEM ID:",item.getItemId()+" pressed");
 		return super.onMenuItemSelected(featureId, item);
@@ -843,8 +886,38 @@ private boolean updateMapWithPointsFromMemory() {
 	@Override
 	protected void onStop(){
 		super.onStop();
+		
+		
+		applicationDidEnterBackground();
+		
+		Log.d("APPSTAT", "onStop app went to background ");
 		db.close();
 	}
+	
+	@Override
+	protected void onStart() {
+	Log.d("APPSTAT", "onStart app went to foreground ");
+
+	
+	applicationWillEnterForeground();
+
+	super.onStart();
+	}
+
+
+
+	private void applicationWillEnterForeground() {
+		// TODO Auto-generated method stub
+		inBackground=false;
+	}
+
+
+
+	private void applicationDidEnterBackground() {
+		// TODO Auto-generated method stub
+		inBackground=true;
+	}
+
 
 
 	private BitmapDescriptor GetCustomBitmapDescriptor (Bitmap basicBitmap, int wifiColor)
@@ -886,30 +959,15 @@ private boolean updateMapWithPointsFromMemory() {
 		
 		myCurrentLocation = new LatLng(latitude, longitude);
 		
-		Geocoder geoCoder = new Geocoder(this, Locale.getDefault());
-		StringBuilder builder = new StringBuilder();
-		String finalAddress = "";
-		try {
-		    List<Address> address = geoCoder.getFromLocation(latitude, longitude, 4);
-		    int maxLines = address.get(0).getMaxAddressLineIndex();
-		    for (int i=0; i<maxLines; i++) {
-		    String addressStr = address.get(0).getAddressLine(i);
-		    builder.append(addressStr);
-		    builder.append(" ");
-		    }
-
-		finalAddress = builder.toString(); //This is the complete address.
-		Log.d("LOCATION IDENTIFIED","Current address:"+finalAddress);
-		} catch (IOException e) {
-			Log.d("LOCATION IDENTIFIED","failed");
+		String finalAddress = "unknown";
+		if(isInternetConnectionAvailable())
+		{
+			finalAddress = returnResultFromGeocoder(myCurrentLocation);
 		}
-		  catch (NullPointerException e) {}
-		
-		debugText.setText("Current location:"+ String.format ("%s",latitude)+ " "+String.format ("%s",longitude));
-//		if(finalAddress != "")
-//			debugText.setText(debugText.getText() + "/n" + finalAddress);
 		
 		
+		debugText.setText("Current location address:"+finalAddress+", coordinates:"+ String.format ("%s",latitude)+ " "+String.format ("%s",longitude));
+			
 		
 	}
 	 
@@ -921,7 +979,7 @@ private boolean updateMapWithPointsFromMemory() {
 		double normalisedLevel=0;
 		String [] securityModes = {WEP, PSK, EAP};
 		boolean open=true;
-		if(lastRefreshTime - System.currentTimeMillis() < TIME_BETWEEN_ADDING_NEW_POINT){
+		if(System.currentTimeMillis() - lastRefreshTime < TIME_BETWEEN_ADDING_NEW_POINT){
 			for(ScanResult ntwkScan:wifiList)
 			{
 				{
@@ -937,21 +995,26 @@ private boolean updateMapWithPointsFromMemory() {
 
 					if(open)
 					{
+						somethingNewToAddToDatabase = true;
 						Log.d("DetailsForAddedPoint:","ScanLVL:"+ntwkScan.level +" current accuracy:"+currentGPSAccuracy);
 						normalisedLevel=(-35.0f/(ntwkScan.level))/currentGPSAccuracy*1.0f *10;
 						Log.d("NormalisedLevelForAddedPoint:",""+normalisedLevel);
+						
 						NetworkPoint newPoint=new NetworkPoint(ntwkScan.BSSID,myCurrentLocation,normalisedLevel,currentGPSAccuracy,ntwkScan.timestamp);
 						
-						//check if point already exists on this exact location. Add if not and replace if accuracy is better
-						if(!networkPointAlreadyExistsOnLocation(newPoint))
-						{
-							db.addNetworkPoint(newPoint);
-							//add data to current working memory
-							updateCurrentData(newPoint);
-							Log.d("ADDPOINT", "success");
+						
+						pointsToAddToDatabase.add(newPoint);
+						
+						//add data to current working memory
+						updateCurrentData(newPoint);
+						
+						//wait till there are a few new points and then add them to database, so there are less db queries
+						if(System.currentTimeMillis() - databaseLastUpdated > TIME_TO_WRITE_TO_DATABASE){
+							
+							updateDatabaseWithAnyNewData();
+							
 						}
-						else
-							Log.d("ADDPOINT", "failed");
+						
 						
 					}
 
@@ -996,23 +1059,7 @@ private boolean updateMapWithPointsFromMemory() {
 	   }
 	}
 	
-	//test runnable thread
-	
-//	  public void updateMap() {
-//		  
-//		 
-//		    // do something long
-//		    Runnable runnable = new Runnable() {
-//		      @Override
-//		      public void run() {
-//		        
-//		          
-//		          updateMapWithPoints();
-//		        
-//		      }
-//		    };
-//		    new Thread(runnable).start();
-//		  }
+
 
 	public void addSomeData() {
 		// do something long
@@ -1046,23 +1093,12 @@ private boolean updateMapWithPointsFromMemory() {
 			
 			
 			//add city name and post code
-			Geocoder geoCoder = new Geocoder(this, Locale.getDefault());
-			StringBuilder builder = new StringBuilder();
-			String finalAddress = "";
-			try {
-			    List<Address> address = geoCoder.getFromLocation(newNetwork.getLat(), newNetwork.getLng(), 1);
-			    int maxLines = address.get(0).getMaxAddressLineIndex();
-			    for (int i=0; i<maxLines; i++) {
-			    String addressStr = address.get(0).getPostalCode()+"-"+address.get(0).getLocality();
-			    builder.append(addressStr);
-			    }
-
-			finalAddress = builder.toString(); //includes postal code and city name in format "xxxxx-cityname"
-			//Log.d("LOCATION IDENTIFIED","Current address:"+finalAddress);
-			} catch (IOException e) {
-				//Log.d("LOCATION IDENTIFIED","failed");
+			String finalAddress = "unknown";
+			if(isInternetConnectionAvailable())
+			{
+				finalAddress = returnResultFromGeocoder(newNetwork.getLocationAsCoordinate());
 			}
-			  catch (NullPointerException e) {}
+			
 			
 			if(!finalAddress.equals(""))
 				newNetwork.setCityName(finalAddress);
@@ -1160,27 +1196,12 @@ private boolean updateMapWithPointsFromMemory() {
 		    	}
 		    }
 		    
-		    Geocoder geoCoder = new Geocoder(this, Locale.getDefault());
-			StringBuilder builder = new StringBuilder();
-			String finalAddress = "";
-			try {
-			    List<Address> address = geoCoder.getFromLocation(lat1, lon1, 4);
-			    int maxLines = address.get(0).getMaxAddressLineIndex();
-			    for (int i=0; i<maxLines; i++) {
-			    String addressStr = address.get(0).getAddressLine(i);
-			    builder.append(addressStr);
-			    builder.append(i+". ");
-			    }
-			    builder.append(" Postal code:" +address.get(0).getPostalCode());
-			    builder.append(" City name:" + address.get(0).getLocality());
-
-			finalAddress = builder.toString(); //This is the complete address.
-			Log.d("LOCATION IDENTIFIED","Current address:"+finalAddress);
-			} catch (IOException e) {
-				Log.d("LOCATION IDENTIFIED","failed");
-			}
-			  catch (NullPointerException e) {}
-		    
+		    if(isInternetConnectionAvailable())
+		    {
+		    	String finalAddress = returnResultFromGeocoder(myCurrentLocation);
+		    	Log.d("LOCATION IDENTIFIED","Current address:"+finalAddress);
+		    }
+		   
 		    
 		}
 	  
@@ -1304,15 +1325,11 @@ private boolean updateMapWithPointsFromMemory() {
 					
 					city ="fake ljubljana";
 					
-					Geocoder gcd = new Geocoder(getBaseContext(), Locale.getDefault());
-					try {
-						List<Address> addresses = gcd.getFromLocation(startLat, startLng, 1);
-						if (addresses.size() > 0) 
-						    city=addresses.get(0).getLocality();
-					} catch (IOException e) {
-						// TODO Auto-generated catch block
-						e.printStackTrace();
-					} 
+					if(isInternetConnectionAvailable())
+					{
+						city=returnResultFromGeocoder(approxCoordinates);
+					}
+					
 					//signal -35dbm(and higher) = 100%; -95dbm = 1%, linear
 					//accuracy is location in meters, 68% confidence that location is inside circle with r as accuracy: 
 					//accuracy of 4 means that location is roughly inside 8 meter of diameter
@@ -1351,5 +1368,54 @@ private boolean updateMapWithPointsFromMemory() {
 
 	    }
 	    
+	    private void updateDatabaseWithAnyNewData()
+	    {
+	    	for(NetworkPoint pnt : pointsToAddToDatabase)
+			{
+				if(!networkPointAlreadyExistsOnLocation(pnt))
+				{
+					db.addNetworkPoint(pnt);
+					
+					Log.d("ADDPOINT", "success");
+				}
+				else
+					Log.d("ADDPOINT", "failed");
+			}
+			
+			
+			databaseLastUpdated = System.currentTimeMillis();
+	    }
+	    
+	    private boolean isInternetConnectionAvailable() {
+	        ConnectivityManager connectivityManager 
+	              = (ConnectivityManager) getSystemService(Context.CONNECTIVITY_SERVICE);
+	        NetworkInfo activeNetworkInfo = connectivityManager.getActiveNetworkInfo();
+	        return activeNetworkInfo != null && activeNetworkInfo.isConnected();
+	    }
+	    
+	    
+	    private String returnResultFromGeocoder(LatLng location){
+	    	String result="unknown";
+	    	
+	    	Geocoder geoCoder = new Geocoder(this, Locale.getDefault());
+			StringBuilder builder = new StringBuilder();
+			
+			try {
+			    List<Address> address = geoCoder.getFromLocation(location.latitude, location.longitude, 1);
+			    int maxLines = address.get(0).getMaxAddressLineIndex();
+			    for (int i=0; i<maxLines; i++) {
+			    String addressStr = address.get(0).getPostalCode()+"-"+address.get(0).getLocality();
+			    builder.append(addressStr);
+			    }
+
+			result = builder.toString(); //includes postal code and city name in format "xxxxx-cityname"
+			//Log.d("LOCATION IDENTIFIED","Current address:"+finalAddress);
+			} catch (IOException e) {
+				//Log.d("LOCATION IDENTIFIED","failed");
+			}
+			  catch (NullPointerException e) {}
+			
+	    	return result;
+	    }
 	  
 }
