@@ -1,0 +1,32 @@
+<PreferenceScreen xmlns:android="http://schemas.android.com/apk/res/android">
+    <CheckBoxPreference
+        android:key="pref_sync"
+        android:title="@string/pref_sync"
+        android:summary="@string/pref_sync_summary"
+        android:defaultValue="true" />
+    
+    <PreferenceScreen
+        android:key="button_maps_settings"
+        android:title="@string/map_settings"
+        android:persistent="false">
+        <ListPreference
+            android:key="perfMapMode"
+            android:entries="@array/mapModes"
+            android:summary="@string/pref_select_map_view_summary"
+            android:entryValues="@array/mapModes"
+            android:title="@string/pref_select_map_view" />
+        <!-- opens another nested subscreen -->
+        
+        <RingtonePreference
+            android:key="button_voicemail_ringtone_key"
+            android:title="@string/voicemail_ringtone_title"
+            android:ringtoneType="notification"  />
+        
+    </PreferenceScreen>
+    <PreferenceScreen
+            android:key="button_voicemail_setting_key"
+            android:title="@string/voicemail_settings"
+            android:persistent="false">
+            
+    </PreferenceScreen>
+</PreferenceScreen>

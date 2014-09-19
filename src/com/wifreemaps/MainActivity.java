@@ -6,8 +6,14 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Locale;
 
+import com.google.android.gms.common.ConnectionResult;
+import com.google.android.gms.common.ErrorDialogFragment;
+import com.google.android.gms.common.GooglePlayServicesClient;
+import com.google.android.gms.common.GooglePlayServicesUtil;
 import com.google.android.gms.internal.hh;
 import com.google.android.gms.internal.ln;
+import com.google.android.gms.location.LocationClient;
+import com.google.android.gms.location.LocationRequest;
 import com.google.android.gms.maps.CameraUpdateFactory;
 import com.google.android.gms.maps.GoogleMap;
 import com.google.android.gms.maps.GoogleMap.OnCameraChangeListener;
@@ -37,10 +43,13 @@ import android.location.LocationListener;
 
 
 
+import android.app.Dialog;
 import android.content.BroadcastReceiver;
 import android.content.Context;
 import android.content.Intent;
 import android.content.IntentFilter;
+import android.content.IntentSender;
+import android.content.SharedPreferences;
 import android.graphics.Bitmap;
 import android.graphics.BitmapFactory;
 import android.graphics.Canvas;
@@ -57,10 +66,12 @@ import android.net.wifi.WifiManager;
 import android.os.Bundle;
 import android.os.Handler;
 import android.os.Looper;
+import android.preference.PreferenceManager;
 
 
 
 import android.support.v4.app.FragmentActivity;
+import android.text.InputFilter.LengthFilter;
 import android.text.method.LinkMovementMethod;
 import android.text.method.ScrollingMovementMethod;
 import android.util.Log;
@@ -77,12 +88,15 @@ import com.google.maps.android.heatmaps.HeatmapTileProvider.Builder;
 
 
 
-public class MainActivity extends FragmentActivity {
-	
+public class MainActivity extends FragmentActivity implements GooglePlayServicesClient.ConnectionCallbacks,
+GooglePlayServicesClient.OnConnectionFailedListener, LocationListener {
+	private static LocationClient mLocationClient;
+	private static LocationRequest mLocationRequest;
 	
 	private static final int DISPLAY_MODE=2; //1= my custom method; 2= heatmaps
 	
-	
+	private final static int CONNECTION_FAILURE_RESOLUTION_REQUEST = 9000;
+
 	private static GoogleMap mMap = null;
 	private static Handler handler = new Handler(Looper.getMainLooper());
 	private float currentZoomLevel;
@@ -199,11 +213,20 @@ public class MainActivity extends FragmentActivity {
 
 		setContentView(R.layout.activity_main); 
 		mHandler = new Handler();
+		mLocationClient = new LocationClient(this, this, this);
 
 		mMap=((MapFragment) getFragmentManager().findFragmentById(R.id.map)).getMap();
-		mMap.setMapType(GoogleMap.MAP_TYPE_NORMAL);
+		
 		mMap.setMyLocationEnabled(true);
+		
+		
+ 
+		mMap.setMapType(GoogleMap.MAP_TYPE_NORMAL);
 
+		checkForSettings();
+		
+		
+		
 		mMap.setOnCameraChangeListener(new OnCameraChangeListener() {
 			private float currentZoom = -1;
 			@Override
@@ -260,34 +283,47 @@ public class MainActivity extends FragmentActivity {
 		}
 
 
-
+		if(servicesConnected()){
+			Toast.makeText(this, "Services connected!", Toast.LENGTH_SHORT).show();
+			
+			mLocationRequest = LocationRequest.create();
+			  mLocationRequest.setPriority(LocationRequest.PRIORITY_HIGH_ACCURACY);
+			  mLocationRequest.setInterval(5000);
+			  mLocationRequest.setNumUpdates(1);
+			  mLocationRequest.setFastestInterval(1000);
+		}
+		else
+			Toast.makeText(this, "Services NOT connected!", Toast.LENGTH_SHORT).show();
 		
+
+
+		 
 		//find current city and get data from database...
 		
-		
-		// The minimum time (in miliseconds) the system will wait until checking if the location changed
-		int minTime = 1000;
-		// The minimum distance (in meters) traveled until you will be notified
-		float minDistance = 4;
-		// Create a new instance of the location listener
-		MyLocationListener myLocListener = new MyLocationListener();
-		// Get the location manager from the system
-		LocationManager locationManager = (LocationManager) getSystemService(Context.LOCATION_SERVICE);
-		// Get the criteria you would like to use
-		Criteria criteria = new Criteria();
-		criteria.setPowerRequirement(Criteria.POWER_LOW);
-		criteria.setAccuracy(Criteria.ACCURACY_FINE);
-		criteria.setAltitudeRequired(false);
-		criteria.setBearingRequired(false);
-		criteria.setCostAllowed(true);
-		criteria.setSpeedRequired(false);
-		// Get the best provider from the criteria specified, and false to say it can turn the provider on if it isn't already
-		String bestProvider = locationManager.getBestProvider(criteria, false);
-		// Request location updates
-		locationManager.requestLocationUpdates(bestProvider, minTime, minDistance, myLocListener);
-		///another method for location...
-		
-		
+//		
+//		// The minimum time (in miliseconds) the system will wait until checking if the location changed
+//		int minTime = 1000;
+//		// The minimum distance (in meters) traveled until you will be notified
+//		float minDistance = 4;
+//		// Create a new instance of the location listener
+//		MyLocationListener myLocListener = new MyLocationListener();
+//		// Get the location manager from the system
+//		LocationManager locationManager = (LocationManager) getSystemService(Context.LOCATION_SERVICE);
+//		// Get the criteria you would like to use
+//		Criteria criteria = new Criteria();
+//		criteria.setPowerRequirement(Criteria.POWER_LOW);
+//		criteria.setAccuracy(Criteria.ACCURACY_FINE);
+//		criteria.setAltitudeRequired(false);
+//		criteria.setBearingRequired(false);
+//		criteria.setCostAllowed(true);
+//		criteria.setSpeedRequired(false);
+//		// Get the best provider from the criteria specified, and false to say it can turn the provider on if it isn't already
+//		String bestProvider = locationManager.getBestProvider(criteria, false);
+//		// Request location updates
+//		locationManager.requestLocationUpdates(bestProvider, minTime, minDistance, myLocListener);
+//		///another method for location...
+//		
+//		
 		
 		_getLocation();
 		
@@ -367,6 +403,40 @@ public class MainActivity extends FragmentActivity {
 		
 
 	}
+
+	private void checkForSettings() {
+		// TODO Auto-generated method stub
+		
+		//check for map type in perfs
+				SharedPreferences sharedPrefs = PreferenceManager
+		                .getDefaultSharedPreferences(this);
+		
+		String currentMapView=sharedPrefs.getString("perfMapMode", "NULL");
+		
+		if(currentMapView.equals("Sattelite view")){
+			Toast.makeText(this, "Satteliteview as preffered", Toast.LENGTH_SHORT).show();
+			mMap.setMapType(GoogleMap.MAP_TYPE_SATELLITE);
+		}
+		else if(currentMapView.equals("Hybrid view")){
+			Toast.makeText(this, "Hybrid as preffered", Toast.LENGTH_SHORT).show();
+			mMap.setMapType(GoogleMap.MAP_TYPE_HYBRID);
+		}
+		else if(currentMapView.equals("Terrain view")){
+			Toast.makeText(this, "Terrain as preffered", Toast.LENGTH_SHORT).show();
+			mMap.setMapType(GoogleMap.MAP_TYPE_TERRAIN);
+		}
+		else if(currentMapView.equals("None")){
+			Toast.makeText(this, "None as preffered", Toast.LENGTH_SHORT).show();
+			mMap.setMapType(GoogleMap.MAP_TYPE_NONE);
+		}
+		else if(currentMapView.equals("Normal view"))
+		{
+			Toast.makeText(this, "Normal as preffered", Toast.LENGTH_SHORT).show();
+			mMap.setMapType(GoogleMap.MAP_TYPE_NORMAL);
+		}
+	}
+
+
 
 	protected void showSimplifiedNetworkInViewport() {
 		// TODO Auto-generated method stub
@@ -506,6 +576,8 @@ public class MainActivity extends FragmentActivity {
 
 
 				currentNetworks = db.getAllNetworks();
+				if(currentNetworks.size()==0)
+					break;
 				//List<OpenNetwork> currentNetworkPoints = new ArrayList<OpenNetwork>();
 				mMap.clear();
 				
@@ -589,6 +661,8 @@ public class MainActivity extends FragmentActivity {
 
 				currentNetworks = db.getAllNetworks();
 				
+				
+				
 				//in case we would need all data from points
 				allAvailableNetworkPoints.clear();
 				mMap.clear();
@@ -609,11 +683,18 @@ public class MainActivity extends FragmentActivity {
 				mLists.clear();
 				mLists.put("WifiTocke", new DataSet( currentNetworkPointsForHeatmaps,
 						"fakeurl"));
-				mProvider = new MyHeatmapTileProvider.Builder().data(
-						mLists.get("WifiTocke").getData()).build();
 				
-				mOverlay = mMap.addTileOverlay(new TileOverlayOptions().tileProvider(mProvider));
-				mOverlay.clearTileCache();
+				if(currentNetworkPointsForHeatmaps.size() == 0){
+					Toast.makeText(getBaseContext(), "No information yet...", Toast.LENGTH_SHORT).show();
+					
+				}
+				else{
+					mProvider = new MyHeatmapTileProvider.Builder().data(
+							mLists.get("WifiTocke").getData()).build();
+					
+					mOverlay = mMap.addTileOverlay(new TileOverlayOptions().tileProvider(mProvider));
+					mOverlay.clearTileCache();
+				}
 			}
 		}
 			
@@ -708,17 +789,22 @@ private boolean updateMapWithPointsFromMemory() {
 						"fakeurl"));
 				
 				
-				
-				mProvider = new MyHeatmapTileProvider.Builder().data(
-						mLists.get("WifiTocke").getData()).build();
-				
-				mMap.clear();
-				
-				
-				mOverlay = mMap.addTileOverlay(new TileOverlayOptions().tileProvider(mProvider));
-				mOverlay.clearTileCache();
-				
+				if(currentNetworkPointsForHeatmaps.size()==0)
+				{
+					Toast.makeText(getBaseContext(), "No data yet", Toast.LENGTH_SHORT).show();
+				}
+				else{
+					mProvider = new MyHeatmapTileProvider.Builder().data(
+							mLists.get("WifiTocke").getData()).build();
+					
+					mMap.clear();
+					
+					
+					mOverlay = mMap.addTileOverlay(new TileOverlayOptions().tileProvider(mProvider));
+					mOverlay.clearTileCache();
+				}
 				newPointDetected=false;
+
 				return true;
 			}
 			
@@ -811,6 +897,7 @@ private boolean updateMapWithPointsFromMemory() {
 	@Override
 	protected void onResume() {
 		registerReceiver(receiverWifi, new IntentFilter(WifiManager.SCAN_RESULTS_AVAILABLE_ACTION));
+		checkForSettings();
 		super.onResume();
 	}
 
@@ -818,80 +905,85 @@ private boolean updateMapWithPointsFromMemory() {
 		@Override
 		public void onReceive(Context c, Intent intent) {
 			
-			List <OpenNetwork> currentNetworksInRange = new ArrayList<OpenNetwork>();
-			OpenNetwork temp;
-			
-			sb = new StringBuilder();
-			wifiList = mainWifi.getScanResults();
-//			for(int i = 0; i < wifiList.size(); i++){
-//				sb.append(new Integer(i+1).toString() + ".");
-//				sb.append((wifiList.get(i)).toString());
-//				sb.append("\n");
-//			}
-//			mainText.setText(sb);
-			
-			
-			//check if there is any open access points
-			
-			String [] securityModes = {WEP, PSK, EAP};
-			boolean open=true;
-			int idx=0;
-			currentNetworksInRange.clear();
-			for(ScanResult scan : wifiList)
-			{
-				//opened until proved secure
-				open = true;
-				
-				for (int i = securityModes.length - 1; i >= 0; i--) {
-		            if (scan.capabilities.contains(securityModes[i])) {
-		                 open=false;
-		            }
-		            
-		        }
-				
-				if(open)
+			//find location first
+			_getLocation();
+			if(myCurrentLocation.equals(new LatLng(41.903616, 12.465888)))
+				Toast.makeText(getBaseContext(), "Location Invalid", Toast.LENGTH_SHORT).show();
+			else{
+				List <OpenNetwork> currentNetworksInRange = new ArrayList<OpenNetwork>();
+				OpenNetwork temp;
+
+				sb = new StringBuilder();
+				wifiList = mainWifi.getScanResults();
+				//			for(int i = 0; i < wifiList.size(); i++){
+				//				sb.append(new Integer(i+1).toString() + ".");
+				//				sb.append((wifiList.get(i)).toString());
+				//				sb.append("\n");
+				//			}
+				//			mainText.setText(sb);
+
+
+				//check if there is any open access points
+
+				String [] securityModes = {WEP, PSK, EAP};
+				boolean open=true;
+				int idx=0;
+				currentNetworksInRange.clear();
+				for(ScanResult scan : wifiList)
 				{
-					sb.append(new Integer(idx+1).toString() + ".");
-					sb.append("SSID: "+ scan.SSID);
-					sb.append("BSSID: " +scan.BSSID);
-					sb.append("Capas: "+ scan.capabilities);
-					sb.append("Freq:" +scan.frequency);
-					
-					sb.append("\n");
-					idx++;
-					
-					temp=new OpenNetwork(scan.BSSID, scan.SSID, "cityname", scan.frequency, myCurrentLocation, 0);
-					currentNetworksInRange.add(temp);
-					
+					//opened until proved secure
+					open = true;
+
+					for (int i = securityModes.length - 1; i >= 0; i--) {
+						if (scan.capabilities.contains(securityModes[i])) {
+							open=false;
+						}
+
+					}
+
+					if(open)
+					{
+						sb.append(new Integer(idx+1).toString() + ".");
+						sb.append("SSID: "+ scan.SSID);
+						sb.append("BSSID: " +scan.BSSID);
+						sb.append("Capas: "+ scan.capabilities);
+						sb.append("Freq:" +scan.frequency);
+
+						sb.append("\n");
+						idx++;
+
+						temp=new OpenNetwork(scan.BSSID, scan.SSID, "cityname", scan.frequency, myCurrentLocation, 0);
+						currentNetworksInRange.add(temp);
+
+					}
+
+				}
+				mainText.setText(sb);
+
+				//try to add this networks to existing networks
+				networksInRange.clear();
+				networksInRange = currentNetworksInRange;
+
+				for(OpenNetwork ntwk:networksInRange)
+				{
+					addNewNetwork(ntwk);
 				}
 
+
+
+
 			}
-			mainText.setText(sb);
-			
-			//try to add this networks to existing networks
-			networksInRange.clear();
-			networksInRange = currentNetworksInRange;
-			
-			for(OpenNetwork ntwk:networksInRange)
-			{
-				addNewNetwork(ntwk);
-			}
-			
-			
-			
-			
 		}
 	}
 
 	@Override
 	protected void onStop(){
-		super.onStop();
-		
-		
+
 		applicationDidEnterBackground();
 		
 		Log.d("APPSTAT", "onStop app went to background ");
 		db.close();
+		super.onStop();
 	}
 	
 	@Override
@@ -909,6 +1001,8 @@ private boolean updateMapWithPointsFromMemory() {
 	private void applicationWillEnterForeground() {
 		// TODO Auto-generated method stub
 		inBackground=false;
+		mLocationClient.connect();
+
 	}
 
 
@@ -916,6 +1010,8 @@ private boolean updateMapWithPointsFromMemory() {
 	private void applicationDidEnterBackground() {
 		// TODO Auto-generated method stub
 		inBackground=true;
+		mLocationClient.disconnect();
+
 	}
 
 
@@ -974,12 +1070,13 @@ private boolean updateMapWithPointsFromMemory() {
 	
 	
 	
-	private void addPointsOnCurrentLocation() {
+	private void addPointsOnCurrentLocation(boolean isInitialPoint) {
 		Log.d("AddNewPoints","Adding new points in current networks, if any");
 		double normalisedLevel=0;
+		long timeStamp=0;
 		String [] securityModes = {WEP, PSK, EAP};
 		boolean open=true;
-		if(System.currentTimeMillis() - lastRefreshTime < TIME_BETWEEN_ADDING_NEW_POINT){
+		if(System.currentTimeMillis() - lastRefreshTime < TIME_BETWEEN_ADDING_NEW_POINT || isInitialPoint){
 			for(ScanResult ntwkScan:wifiList)
 			{
 				{
@@ -995,12 +1092,14 @@ private boolean updateMapWithPointsFromMemory() {
 
 					if(open)
 					{
+						
+						timeStamp=System.currentTimeMillis();
 						somethingNewToAddToDatabase = true;
 						Log.d("DetailsForAddedPoint:","ScanLVL:"+ntwkScan.level +" current accuracy:"+currentGPSAccuracy);
 						normalisedLevel=(-35.0f/(ntwkScan.level))/currentGPSAccuracy*1.0f *10;
 						Log.d("NormalisedLevelForAddedPoint:",""+normalisedLevel);
 						
-						NetworkPoint newPoint=new NetworkPoint(ntwkScan.BSSID,myCurrentLocation,normalisedLevel,currentGPSAccuracy,ntwkScan.timestamp);
+						NetworkPoint newPoint=new NetworkPoint(ntwkScan.BSSID,myCurrentLocation,normalisedLevel,currentGPSAccuracy,timeStamp);
 						
 						
 						pointsToAddToDatabase.add(newPoint);
@@ -1036,7 +1135,7 @@ private boolean updateMapWithPointsFromMemory() {
 	    	  Log.d("LocationChanged","Current:"+loc.getLatitude()+" "+loc.getLongitude());
 	    	  currentGPSAccuracy=loc.getAccuracy();
 	    	  findCurrentLocation(loc.getLatitude(),loc.getLongitude());
-	    	  addPointsOnCurrentLocation();
+	    	  addPointsOnCurrentLocation(false);
 	      }
 	   }
 
@@ -1113,7 +1212,7 @@ private boolean updateMapWithPointsFromMemory() {
 				databaseState=1;
 			
 			debugText.setText("Added new network to DATABASE and WORKINGSET " +newNetwork.getSSID()+ " on location:"+newNetwork.getLocation()+ " in city: "+ newNetwork.getCityName());
-			addPointsOnCurrentLocation();
+			addPointsOnCurrentLocation(true);
 		}
 		
 		
@@ -1196,12 +1295,28 @@ private boolean updateMapWithPointsFromMemory() {
 		    	}
 		    }
 		    
-		    if(isInternetConnectionAvailable())
+		    if(location == null)
 		    {
-		    	String finalAddress = returnResultFromGeocoder(myCurrentLocation);
-		    	Log.d("LOCATION IDENTIFIED","Current address:"+finalAddress);
+
+		    	
+
+		    	if(servicesConnected()){
+		    		//use other method
+		    		
+		    		if(mLocationClient != null)
+		    		{
+		    			Location mCurrentLocation = mLocationClient.getLastLocation();
+		    			myCurrentLocation=new LatLng(mCurrentLocation.getLatitude(), mCurrentLocation.getLongitude());
+		    			Log.d("LOCATION via Fused Location","Location found:"+myCurrentLocation.toString());
+		    		}
+		    	}
 		    }
-		   
+		    
+		    if(isInternetConnectionAvailable())
+	    	{
+	    		String finalAddress = returnResultFromGeocoder(myCurrentLocation);
+	    		Log.d("LOCATION IDENTIFIED","Current address:"+finalAddress);
+	    	}
 		    
 		}
 	  
@@ -1417,5 +1532,121 @@ private boolean updateMapWithPointsFromMemory() {
 			
 	    	return result;
 	    }
+
+
+
+		@Override
+		public void onLocationChanged(Location newLocation) {
+			// TODO Auto-generated method stub
+			
+				if(newLocation != null){
+					
+						myCurrentLocation=new LatLng(newLocation.getLatitude(), newLocation.getLongitude());
+						Log.d("Found alternative location","Location:"+myCurrentLocation.toString());
+				}
+			
+		}
+
+
+
+		@Override
+		public void onProviderDisabled(String arg0) {
+			// TODO Auto-generated method stub
+			
+		}
+
+
+
+		@Override
+		public void onProviderEnabled(String arg0) {
+			// TODO Auto-generated method stub
+			
+		}
+
+
+
+		@Override
+		public void onStatusChanged(String arg0, int arg1, Bundle arg2) {
+			// TODO Auto-generated method stub
+			
+		}
+
+
+
+		@Override
+		public void onConnectionFailed(ConnectionResult connectionResult) {
+			// TODO Auto-generated method stub
+			if (connectionResult.hasResolution()) {
+	            try {
+	                // Start an Activity that tries to resolve the error
+	                connectionResult.startResolutionForResult(
+	                        this,
+	                        CONNECTION_FAILURE_RESOLUTION_REQUEST);
+	                /*
+	                 * Thrown if Google Play services canceled the original
+	                 * PendingIntent
+	                 */
+	            } catch (IntentSender.SendIntentException e) {
+	                // Log the error
+	                e.printStackTrace();
+	            }
+	        } else {
+	            /*
+	             * If no resolution is available, display a dialog to the
+	             * user with the error.
+	             */
+	            Toast.makeText(this, "Error code:"+connectionResult.getErrorCode(), Toast.LENGTH_SHORT).show();
+	        }
+		}
+
+
+
+		@Override
+		public void onConnected(Bundle arg0) {
+			// TODO Auto-generated method stub
+			Toast.makeText(this, "Connected", Toast.LENGTH_SHORT).show();
+		}
+
+
+
+		@Override
+		public void onDisconnected() {
+			// TODO Auto-generated method stub
+			Toast.makeText(this, "Disconnected. Please re-connect.",
+	                Toast.LENGTH_SHORT).show();
+
+		}
+		
+		private boolean servicesConnected() {
+	        // Check that Google Play services is available
+	        int resultCode =
+	                GooglePlayServicesUtil.
+	                        isGooglePlayServicesAvailable(this);
+	        // If Google Play services is available
+	        if (ConnectionResult.SUCCESS == resultCode) {
+	            // In debug mode, log the status
+	            Log.d("Location Updates",
+	                    "Google Play services is available.");
+	            // Continue
+	            return true;
+	        // Google Play services was not available for some reason.
+	        // resultCode holds the error code.
+	        } else {
+	            // Get the error dialog from Google Play services
+	            Dialog errorDialog = GooglePlayServicesUtil.getErrorDialog(
+	                    resultCode,
+	                    this,
+	                    CONNECTION_FAILURE_RESOLUTION_REQUEST);
+
+	            // If Google Play services can provide an error dialog
+	            if (errorDialog != null) {
+	                // Create a new DialogFragment for the error dialog
+	            	Log.d("Location Updates","Google Play services error:" +errorDialog.toString());
+	            }
+	            return false;
+	        }
+	    }
+
+		
 	  
 }
