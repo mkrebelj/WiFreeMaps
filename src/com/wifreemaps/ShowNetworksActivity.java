@@ -24,6 +24,9 @@ public class ShowNetworksActivity extends ListActivity {
 		    
 		    db=new MySQLiteHelper(getBaseContext());
 		    
+		    
+		    this.setTitle("List of all networks");
+		    
 		    //get all different networks
 		     networkList=db.getAllNetworks();
 		     
@@ -54,6 +57,8 @@ public class ShowNetworksActivity extends ListActivity {
 		    Log.d("Showing network with bssid", networkList.get(position).getBSSID());
 		    Intent intent=new Intent(getBaseContext(), ShowNetworkDetails.class);
 		    intent.putExtra("SELECTED_BSSID", networkList.get(position).getBSSID());
+		    intent.putExtra("NETWORK_SSID", networkList.get(position).getSSID());
+		    Toast.makeText(this, "Showing details of: "+networkList.get(position).getBSSID(), Toast.LENGTH_LONG).show();
 			startActivity(intent);
 			
 		  }

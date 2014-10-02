@@ -13,8 +13,8 @@
 	
 	<string name="pref_select_map_view">Map view</string>
 	<string name="pref_select_map_view_summary">Select type of map view</string>
-	<string name="pref_sync">Synchronisation</string>
-	<string name="pref_sync_summary">Select if you want to be syncd</string>
+	<string name="allow_active_scan">Active scan</string>
+	<string name="allow_active_scan_summary">Allow app to collect network data when in background</string>
 	
 	<string name="pref_syncConnectionType">conn type title</string>
 	<string name="pref_syncConnectionTypes_default">default</string>

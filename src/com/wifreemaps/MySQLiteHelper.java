@@ -14,12 +14,13 @@ import android.database.sqlite.SQLiteOpenHelper;
 import android.util.Log;
 
 public class MySQLiteHelper extends SQLiteOpenHelper{
-	private static final int DATABASE_VERSION = 1;
+	private static final int DATABASE_VERSION = 2;
 	private static final String DATABASE_NAME = "OpenNetworkDB";
-	
+	Context myParentActivity;
 	
 	public MySQLiteHelper(Context context) {
         super(context, DATABASE_NAME, null, DATABASE_VERSION); 
+        myParentActivity =  context;
     }
 
 
@@ -47,13 +48,13 @@ public class MySQLiteHelper extends SQLiteOpenHelper{
         Log.d("CreateTable", "points");
         String CREATE_GPSPOINT_TABLE= "CREATE TABLE points ( "+
                 "pbssid TEXT, " +
-        		"indx INTEGER PRIMARY KEY AUTOINCREMENT, " +
-                "gpslocation TEXT, "+
+        		"indx INTEGER, " +
+                "gpslocation TEXT UNIQUE ON CONFLICT IGNORE, "+
                 "wifistrength REAL, " +
         		"gpsaccuracy REAL, " +
                 "quality REAL, "+
                 "timestamp INTEGER," +
-                "UNIQUE ( pbssid, indx) )";
+                "PRIMARY KEY ( pbssid, indx) )";
         
         db.execSQL(CREATE_GPSPOINT_TABLE);
         
@@ -123,6 +124,91 @@ public class MySQLiteHelper extends SQLiteOpenHelper{
         // 4. close
         db.close(); 
 		
+	}
+	
+	public int updateUnknownLocations(){
+		
+		ArrayList<OpenNetwork> networks = new ArrayList<OpenNetwork>();
+		
+		// 1. build query
+				String query = "SELECT "+KEY_BSSID+" , "+KEY_APPROXIMATELOCATION+" FROM "+
+								TABLE_NETWORKS+
+								" WHERE "+KEY_CITYNAME+" = " +"'unknown'";
+				
+				// 2. get reference to writable DB
+			       SQLiteDatabase db = this.getWritableDatabase();
+			       Cursor cursor = db.rawQuery(query, null);
+				
+			    // 3. go over each row, build network and add it to list
+			       OpenNetwork ntwk = null;
+			       String bssid;
+			       String updatedAddress;
+			       double lat=0,lng=0;
+			       LatLng gpsLocation=new LatLng(0, 0);
+			       
+			       if (cursor.moveToFirst()) {
+			           do {
+//			   0     	  "pbssid TEXT PRIMARY, " +
+//			   1     		"indx INTEGER PRIMARY KEY AUTOINCREMENT, " +
+//			   2             "gpslocation TEXT,"+
+//			   3             "wifistrength REAL, " +
+//			   4     		"gpsaccuracy REAL, " +
+//			   5             "quality REAL, "+
+//			   6             "timestamp INTEGER)";
+			        	   
+			        	   
+			        	   bssid=cursor.getString(0);
+			        	   Log.d("BSSID to update location:", bssid);
+			        	  
+			        	   
+			        	   try {
+							   lat=Double.parseDouble(cursor.getString(1).split(";")[0]);
+							   lng=Double.parseDouble(cursor.getString(1).split(";")[1]);
+							   Log.d("Location for that ntwk:", lat+","+lng);
+							   gpsLocation = new LatLng(lat, lng);
+						} catch (NumberFormatException e) {
+							// TODO Auto-generated catch block
+							e.printStackTrace();
+						}
+			        	   
+			        	   updatedAddress =( (MainActivity) myParentActivity).determineAddress(gpsLocation);
+			        	   Log.d("Updated address:", updatedAddress);
+			        	   
+			               ntwk = new OpenNetwork(bssid, "", updatedAddress, 0, gpsLocation, 0);
+			               
+			 
+			               // Add to network list
+			               networks.add(ntwk);
+			           } while (cursor.moveToNext());
+			       }
+			 
+			       //now update database with this new values
+			       String updateQuery;
+			       int updated = 0;
+			       for(OpenNetwork updatedNetwork : networks)
+			       {
+//			    	   updateQuery= "UPDATE " +TABLE_NETWORKS +
+//				    		   " SET "+ KEY_CITYNAME +"= '"+updatedNetwork.getCityName()+"'"+
+//				    		   " WHERE "+ KEY_APPROXIMATELOCATION + " = '"+updatedNetwork.getLocation()+"'";
+//			    	   db.execSQL(updateQuery);
+			    	   
+			    	   ContentValues cv = new ContentValues();
+			    	   cv.put(KEY_CITYNAME,updatedNetwork.getCityName());  
+			    	   updated += db.update(TABLE_NETWORKS, cv, KEY_BSSID+" = '"+updatedNetwork.getBSSID()+"'", null);
+			       }
+			       
+			       if(networks.size() != updated)
+			       {
+			    	   Log.d("Updated rows incorrect", "Should update: "+networks.size()+" but updated "+updated);
+			       }
+			       
+			    	   
+			       
+//			       Log.d("getNetworkPoi{nts()", networkPoints.toString());
+			       
+			       db.close();	
+			       
+			       return updated;
 	}
 	
 	public void addNetworkPoint(NetworkPoint point){

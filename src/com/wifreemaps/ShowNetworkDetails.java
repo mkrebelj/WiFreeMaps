@@ -25,16 +25,23 @@ public class ShowNetworkDetails extends ListActivity {
 		   
 		    
 		    db=new MySQLiteHelper(getBaseContext());
-		    Bundle extras = getIntent().getExtras();
-		    if (extras != null) {
-		       myBSSID = extras.getString("SELECTED_BSSID");
+		    String title = getIntent().getStringExtra("NETWORK_SSID");
+		    if(title != null)
+		    {
+		    	this.setTitle(title);
 		    }
+		    
+		    String ekstra=getIntent().getStringExtra("SELECTED_BSSID");
+		    if (ekstra != null) {
+		       myBSSID = ekstra;
+		    }
+		    
 		    
 		    //get all different networks
 		     pointList=db.getNetworkPoints(myBSSID);
 		     
 		     String[] values = new String[pointList.size()];
-		     Log.d("NetworkListSize",pointList.size()+"networks");
+		     Log.d("NetworkListSize",pointList.size()+" points");
 		     int i=0;
 		     for(NetworkPoint point : pointList)
 		     {
