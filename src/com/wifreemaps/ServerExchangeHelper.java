@@ -11,10 +11,10 @@ import org.json.JSONArray;
 import org.json.JSONException;
 import org.json.JSONObject;
 
-public class MyServerExchangeHelper {
+public class ServerExchangeHelper {
 	
 	
-	public MyServerExchangeHelper(){
+	public ServerExchangeHelper(){
 	}
 	
 	public ArrayList<OpenNetwork> retrieveNetworksFromServer(String city){

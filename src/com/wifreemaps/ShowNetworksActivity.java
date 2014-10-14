@@ -21,7 +21,7 @@ public class ShowNetworksActivity extends ListActivity {
 	  public void onCreate(Bundle icicle) {
 		    super.onCreate(icicle);
 		   
-		    
+//		    setContentView(R.layout.rowlayout); 
 		    db=new MySQLiteHelper(getBaseContext());
 		    
 		    
@@ -58,6 +58,7 @@ public class ShowNetworksActivity extends ListActivity {
 		    Intent intent=new Intent(getBaseContext(), ShowNetworkDetails.class);
 		    intent.putExtra("SELECTED_BSSID", networkList.get(position).getBSSID());
 		    intent.putExtra("NETWORK_SSID", networkList.get(position).getSSID());
+		    intent.putExtra("LOCATION", networkList.get(position).getCityName());
 		    Toast.makeText(this, "Showing details of: "+networkList.get(position).getBSSID(), Toast.LENGTH_LONG).show();
 			startActivity(intent);
 			
