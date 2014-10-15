@@ -125,6 +125,7 @@ GooglePlayServicesClient.OnConnectionFailedListener, LocationListener {
 	private boolean detailedView = false, detailedViewLoaded = false;
 	private boolean somethingNewToAddToDatabase = false;
 	private long databaseLastUpdated = 0;
+	private long lastTimePointWasAdded = 0;
 	private List<String> uniqueNetworks=new ArrayList<String>();
 	private List<Integer> networkColors = new ArrayList<Integer>();
 	private List<NetworkMarking> drawableNetworkMarkings = new ArrayList<NetworkMarking>();
@@ -155,7 +156,7 @@ GooglePlayServicesClient.OnConnectionFailedListener, LocationListener {
 	PromptGPS popupGPS;
 	LocationManager mainLocationManager;
 	MySQLiteHelper db;
-	
+
 	private static DataHandler dataHandler;
 	private static int databaseState=0;
 	private LatLng myCurrentLocation;
@@ -192,7 +193,7 @@ GooglePlayServicesClient.OnConnectionFailedListener, LocationListener {
 	private static final int ALT_HEATMAP_RADIUS_14 = 160;
 	private static final int ALT_HEATMAP_RADIUS_13 = 199;
 
-	
+
 	//Server url
 	private String baseServerUrl="http://212.235.208.12:31173/webservice/";
 	private HttpRequestHelper myHttpRequestHelper = new HttpRequestHelper();
@@ -632,7 +633,7 @@ GooglePlayServicesClient.OnConnectionFailedListener, LocationListener {
 						networkPoints=db.getNetworkPoints(bssid);
 
 
-						//TODO: poskusi razdelit toèke v velikostne razrede in dodaj veè razliènih moverlayev na mapo- z razliènmi velikostmi toèk
+						//TODO: poskusi razdelit toï¿½ke v velikostne razrede in dodaj veï¿½ razliï¿½nih moverlayev na mapo- z razliï¿½nmi velikostmi toï¿½k
 
 
 
@@ -647,8 +648,8 @@ GooglePlayServicesClient.OnConnectionFailedListener, LocationListener {
 
 							GroundOverlayOptions openWifiSpot = new GroundOverlayOptions()
 							.image(radiusImage)
-							.position(point.getLocation(), (float)point.getGpsAccuracy(), (float)point.getGpsAccuracy()) //Na tem mestu poraèunati natanènost in sinhronizirati z velikostjo
-							.transparency(pointIntensity); //odvisno od kvalitete signala pobarvati med 0 in 1, izdelati naèin da se porazdeli na prostor- > (moc.signala/max.moc)/povrsina
+							.position(point.getLocation(), (float)point.getGpsAccuracy(), (float)point.getGpsAccuracy()) //Na tem mestu poraï¿½unati natanï¿½nost in sinhronizirati z velikostjo
+							.transparency(pointIntensity); //odvisno od kvalitete signala pobarvati med 0 in 1, izdelati naï¿½in da se porazdeli na prostor- > (moc.signala/max.moc)/povrsina
 							mMap.addGroundOverlay(openWifiSpot);
 							Log.d("Point quality:",point.getQuality()+"");
 						}
@@ -780,8 +781,8 @@ GooglePlayServicesClient.OnConnectionFailedListener, LocationListener {
 
 							GroundOverlayOptions openWifiSpot = new GroundOverlayOptions()
 							.image(radiusImage)
-							.position(point.getLocation(), (float)point.getGpsAccuracy(), (float)point.getGpsAccuracy()) //Na tem mestu poraèunati natanènost in sinhronizirati z velikostjo
-							.transparency(pointIntensity); //odvisno od kvalitete signala pobarvati med 0 in 1, izdelati naèin da se porazdeli na prostor- > (moc.signala/max.moc)/povrsina
+							.position(point.getLocation(), (float)point.getGpsAccuracy(), (float)point.getGpsAccuracy()) //Na tem mestu poraï¿½unati natanï¿½nost in sinhronizirati z velikostjo
+							.transparency(pointIntensity); //odvisno od kvalitete signala pobarvati med 0 in 1, izdelati naï¿½in da se porazdeli na prostor- > (moc.signala/max.moc)/povrsina
 							mMap.addGroundOverlay(openWifiSpot);
 							Log.d("Point quality:",point.getQuality()+"");
 						}
@@ -885,6 +886,7 @@ GooglePlayServicesClient.OnConnectionFailedListener, LocationListener {
 		menu.add(4,4,4,"Send data to server");
 		menu.add(5,5,5,"Get Network Data");
 		menu.add(6,6,6,"Get Points Data");
+		menu.add(7,7,7,"Send points to server");
 		return super.onCreateOptionsMenu(menu);
 	}
 
@@ -927,16 +929,27 @@ GooglePlayServicesClient.OnConnectionFailedListener, LocationListener {
 		{
 			Log.d("SYNC", "Geting data from server..");
 			if(internetConnected())
+
 				myHttpRequestHelper.getNetworksRequest(this, baseServerUrl+"getdata.php");
-				//new HttpAsyncTaskGETNetworks().execute(baseServerUrl+"getdata.php");
+			//new HttpAsyncTaskGETNetworks().execute(baseServerUrl+"getdata.php");
 
 		}
 		else if(selected == 6)
 		{
 			Log.d("SYNC", "Getting point data from server...");
 			if(internetConnected())
-				myHttpRequestHelper.getPointsRequest(this,baseServerUrl+"getdatapoints.php");
-				//new HttpAsyncTaskGETNetworks().execute(baseServerUrl+"getdatapoints.php");
+				myHttpRequestHelper.getPointsRequest(this,baseServerUrl+"getdata.php");
+			//new HttpAsyncTaskGETNetworks().execute(baseServerUrl+"getdatapoints.php");
+		}
+		else if(selected == 7)
+		{
+			Log.d("SYNC", "Sending data points to server..");
+			if(internetConnected()){
+
+
+				myHttpRequestHelper.sendPointsToServer(this, baseServerUrl+"uploaddata.php", db.getAllPoints());
+				//new HttpAsyncTask().execute(baseServerUrl+"uploaddata.php");
+			}
 		}
 		Log.d("ITEM ID:",item.getItemId()+" pressed");
 		return super.onMenuItemSelected(featureId, item);
@@ -990,6 +1003,8 @@ GooglePlayServicesClient.OnConnectionFailedListener, LocationListener {
 				boolean open=true;
 				int idx=0;
 				currentNetworksInRange.clear();
+
+
 				for(ScanResult scan : wifiList)
 				{
 					//opened until proved secure
@@ -1029,6 +1044,11 @@ GooglePlayServicesClient.OnConnectionFailedListener, LocationListener {
 				{
 					addNewNetwork(ntwk);
 				}
+
+				//after new networks were added, try to add points to database
+				addPointsOnCurrentLocation(false);
+
+
 			}
 			else
 			{
@@ -1151,7 +1171,7 @@ GooglePlayServicesClient.OnConnectionFailedListener, LocationListener {
 		long timeStamp=0;
 		String [] securityModes = {WEP, PSK, EAP};
 		boolean open=true;
-		if(System.currentTimeMillis() - lastRefreshTime < TIME_BETWEEN_ADDING_NEW_POINT || isInitialPoint){
+		if( ((System.currentTimeMillis() - lastRefreshTime) > TIME_BETWEEN_ADDING_NEW_POINT) || isInitialPoint){
 			for(ScanResult ntwkScan:wifiList)
 			{
 				{
@@ -1191,10 +1211,11 @@ GooglePlayServicesClient.OnConnectionFailedListener, LocationListener {
 
 
 			}
+
 			lastRefreshTime = System.currentTimeMillis();
 
 			//wait till there are a few new points and then add them to database, so there are less db queries
-			if(System.currentTimeMillis() - databaseLastUpdated > TIME_TO_WRITE_TO_DATABASE){
+			if( (System.currentTimeMillis() - databaseLastUpdated ) > TIME_TO_WRITE_TO_DATABASE){
 
 				updateDatabaseWithAnyNewData();
 
@@ -1283,39 +1304,6 @@ GooglePlayServicesClient.OnConnectionFailedListener, LocationListener {
 
 	}
 
-	private void addInitialPoint(OpenNetwork newNetwork) {
-		// TODO Auto-generated method stub
-
-		for(ScanResult ntwkScan:wifiList)
-		{
-			if(newNetwork.getBSSID().equals(ntwkScan.BSSID))
-			{
-				long timeStamp=System.currentTimeMillis();
-				somethingNewToAddToDatabase = true;
-				Log.d("DetailsForINITIALPoint:","ScanLVL:"+ntwkScan.level +" current accuracy:"+currentGPSAccuracy);
-				double normalisedLevel=(-35.0f/(ntwkScan.level))/currentGPSAccuracy*1.0f *10;
-				Log.d("NormalisedLevelForAddedPoint:",""+normalisedLevel);
-
-				NetworkPoint newPoint=new NetworkPoint(ntwkScan.BSSID,myCurrentLocation,normalisedLevel,currentGPSAccuracy,timeStamp);
-
-
-				pointsToAddToDatabase.add(newPoint);
-
-				//add data to current working memory
-				updateCurrentData(newPoint);
-
-
-				return;
-			}
-		}
-
-		//wait till there are a few new points and then add them to database, so there are less db queries
-		if(System.currentTimeMillis() - databaseLastUpdated > TIME_TO_WRITE_TO_DATABASE){
-
-			updateDatabaseWithAnyNewData();
-
-		}
-	}
 
 	Runnable mStatusChecker = new Runnable() {
 		@Override 
@@ -1587,14 +1575,9 @@ GooglePlayServicesClient.OnConnectionFailedListener, LocationListener {
 	{
 		for(NetworkPoint pnt : pointsToAddToDatabase)
 		{
-			if(!networkPointAlreadyExistsOnLocation(pnt))
-			{
-				db.addNetworkPoint(pnt);
 
-				Log.d("ADDPOINT", "success");
-			}
-			else
-				Log.d("ADDPOINT", "failed");
+			db.addNetworkPoint(pnt);
+
 		}
 
 		pointsToAddToDatabase.clear();
@@ -1893,162 +1876,162 @@ GooglePlayServicesClient.OnConnectionFailedListener, LocationListener {
 		return result;
 	}
 
-//	private class HttpAsyncTask extends AsyncTask<String, Void, String> {
-//	@Override
-//	protected String doInBackground(String... urls) {
-//
-//
-//		HttpParams httpParameters = new BasicHttpParams();
-//		// set the connection timeout and socket timeout parameters (milliseconds)
-//		HttpConnectionParams.setConnectionTimeout(httpParameters, 5000);
-//		HttpConnectionParams.setSoTimeout(httpParameters, 5000);
-//
-//		HttpClient client = new DefaultHttpClient(httpParameters);
-//		Log.d("HTTP responded","starting http request...");
-//
-//		String result = null;
-//		try {
-//			// Add your data
-//			Log.d("HTTP responded","adding data...");
-//			ArrayList<OpenNetwork> networksToSend= new ArrayList<OpenNetwork>();
-//			for(OpenNetwork na:currentNetworks)
-//			{
-//				networksToSend.add(na);
-//			}
-//			JSONObject payload = serverHelper.prepareJSON(networksToSend);
-//
-//
-//
-//
-//			HttpPost httppost = new HttpPost( urls[0]);
-//			httppost.setHeader("Accept", "application/json");
-//			httppost.setHeader("Content-type", "application/json");
-//			httppost.setEntity(new ByteArrayEntity(
-//					payload.toString().getBytes("UTF8")));
-//			Log.d("HTTP responded","execute request...");
-//
-//
-//
-//			HttpResponse response = client.execute(httppost);
-//			HttpEntity responseEntity = response.getEntity();
-//			Log.d("HTTP responded","reading response...");
-//			String thisline="";
-//			if (responseEntity != null) {
-//				BufferedReader reader = new BufferedReader(
-//						new InputStreamReader(responseEntity.getContent(),
-//								"UTF-8"));
-//
-//				while( (thisline = reader.readLine()) != null)
-//					result=result + thisline+"\n";
-//				Log.d("HTTP responded","Http said:"+result);
-//			} else {
-//				Log.d("HTTP responded","nothing");
-//			}
-//
-//		} catch (IllegalArgumentException e1) {
-//			e1.printStackTrace();
-//		} catch (IOException e2) {
-//			e2.printStackTrace();
-//		}
-//		return result;
-//
-//
-//
-//
-//
-//
-//	}
-//	// onPostExecute displays the results of the AsyncTask.
-//	@Override
-//	protected void onPostExecute(String result) {
-//		super.onPostExecute(result);
-//		Toast.makeText(getBaseContext(), "Data Sent!", Toast.LENGTH_LONG).show();
-//		debugText.setText("");
-//		debugText.setText("Response:"+result);
-//
-//	}
-//
-//}
+	//	private class HttpAsyncTask extends AsyncTask<String, Void, String> {
+	//	@Override
+	//	protected String doInBackground(String... urls) {
+	//
+	//
+	//		HttpParams httpParameters = new BasicHttpParams();
+	//		// set the connection timeout and socket timeout parameters (milliseconds)
+	//		HttpConnectionParams.setConnectionTimeout(httpParameters, 5000);
+	//		HttpConnectionParams.setSoTimeout(httpParameters, 5000);
+	//
+	//		HttpClient client = new DefaultHttpClient(httpParameters);
+	//		Log.d("HTTP responded","starting http request...");
+	//
+	//		String result = null;
+	//		try {
+	//			// Add your data
+	//			Log.d("HTTP responded","adding data...");
+	//			ArrayList<OpenNetwork> networksToSend= new ArrayList<OpenNetwork>();
+	//			for(OpenNetwork na:currentNetworks)
+	//			{
+	//				networksToSend.add(na);
+	//			}
+	//			JSONObject payload = serverHelper.prepareJSON(networksToSend);
+	//
+	//
+	//
+	//
+	//			HttpPost httppost = new HttpPost( urls[0]);
+	//			httppost.setHeader("Accept", "application/json");
+	//			httppost.setHeader("Content-type", "application/json");
+	//			httppost.setEntity(new ByteArrayEntity(
+	//					payload.toString().getBytes("UTF8")));
+	//			Log.d("HTTP responded","execute request...");
+	//
+	//
+	//
+	//			HttpResponse response = client.execute(httppost);
+	//			HttpEntity responseEntity = response.getEntity();
+	//			Log.d("HTTP responded","reading response...");
+	//			String thisline="";
+	//			if (responseEntity != null) {
+	//				BufferedReader reader = new BufferedReader(
+	//						new InputStreamReader(responseEntity.getContent(),
+	//								"UTF-8"));
+	//
+	//				while( (thisline = reader.readLine()) != null)
+	//					result=result + thisline+"\n";
+	//				Log.d("HTTP responded","Http said:"+result);
+	//			} else {
+	//				Log.d("HTTP responded","nothing");
+	//			}
+	//
+	//		} catch (IllegalArgumentException e1) {
+	//			e1.printStackTrace();
+	//		} catch (IOException e2) {
+	//			e2.printStackTrace();
+	//		}
+	//		return result;
+	//
+	//
+	//
+	//
+	//
+	//
+	//	}
+	//	// onPostExecute displays the results of the AsyncTask.
+	//	@Override
+	//	protected void onPostExecute(String result) {
+	//		super.onPostExecute(result);
+	//		Toast.makeText(getBaseContext(), "Data Sent!", Toast.LENGTH_LONG).show();
+	//		debugText.setText("");
+	//		debugText.setText("Response:"+result);
+	//
+	//	}
+	//
+	//}
 
 
 
-//private class HttpAsyncTaskGETNetworks extends AsyncTask<String, Void, String> {
-//	@Override
-//	protected String doInBackground(String... urls) {
-//
-//
-//		HttpParams httpParameters = new BasicHttpParams();
-//		// set the connection timeout and socket timeout parameters (milliseconds)
-//		HttpConnectionParams.setConnectionTimeout(httpParameters, 5000);
-//		HttpConnectionParams.setSoTimeout(httpParameters, 5000);
-//
-//		HttpClient client = new DefaultHttpClient(httpParameters);
-//		Log.d("HTTP responded","starting http request...");
-//
-//		String result = null;
-//		try {
-//			// Add your data
-//			Log.d("HTTP responded","request mode: networks");
-//
-//			JSONObject payload = new JSONObject();
-//			try {
-//
-//				payload.put("mode", "networks");
-//
-//			} catch (JSONException e) {
-//				// TODO Auto-generated catch block
-//				e.printStackTrace();
-//			}
-//
-//
-//			HttpPost httppost = new HttpPost( urls[0]);
-//			httppost.setHeader("Accept", "application/json");
-//			httppost.setHeader("Content-type", "application/json");
-//			httppost.setEntity(new ByteArrayEntity(
-//					payload.toString().getBytes("UTF8")));
-//			Log.d("HTTP responded","execute request...");
-//
-//
-//
-//			HttpResponse response = client.execute(httppost);
-//			HttpEntity responseEntity = response.getEntity();
-//			Log.d("HTTP responded","reading response...");
-//			String thisline="";
-//			if (responseEntity != null) {
-//				BufferedReader reader = new BufferedReader(
-//						new InputStreamReader(responseEntity.getContent(),
-//								"UTF-8"));
-//
-//				while( (thisline = reader.readLine()) != null)
-//					result=result + thisline+"\n";
-//				Log.d("HTTP responded","Http said:"+result);
-//			} else {
-//				Log.d("HTTP responded","nothing");
-//			}
-//
-//		} catch (IllegalArgumentException e1) {
-//			e1.printStackTrace();
-//		} catch (IOException e2) {
-//			e2.printStackTrace();
-//		}
-//		return result;
-//
-//
-//
-//
-//
-//
-//	}
-//	// onPostExecute displays the results of the AsyncTask.
-//	@Override
-//	protected void onPostExecute(String result) {
-//		super.onPostExecute(result);
-//		Toast.makeText(getBaseContext(), "Data Sent!", Toast.LENGTH_LONG).show();
-//		debugText.setText("");
-//		debugText.setText("Response:"+result);
-//
-//	}
-//
-//}
+	//private class HttpAsyncTaskGETNetworks extends AsyncTask<String, Void, String> {
+	//	@Override
+	//	protected String doInBackground(String... urls) {
+	//
+	//
+	//		HttpParams httpParameters = new BasicHttpParams();
+	//		// set the connection timeout and socket timeout parameters (milliseconds)
+	//		HttpConnectionParams.setConnectionTimeout(httpParameters, 5000);
+	//		HttpConnectionParams.setSoTimeout(httpParameters, 5000);
+	//
+	//		HttpClient client = new DefaultHttpClient(httpParameters);
+	//		Log.d("HTTP responded","starting http request...");
+	//
+	//		String result = null;
+	//		try {
+	//			// Add your data
+	//			Log.d("HTTP responded","request mode: networks");
+	//
+	//			JSONObject payload = new JSONObject();
+	//			try {
+	//
+	//				payload.put("mode", "networks");
+	//
+	//			} catch (JSONException e) {
+	//				// TODO Auto-generated catch block
+	//				e.printStackTrace();
+	//			}
+	//
+	//
+	//			HttpPost httppost = new HttpPost( urls[0]);
+	//			httppost.setHeader("Accept", "application/json");
+	//			httppost.setHeader("Content-type", "application/json");
+	//			httppost.setEntity(new ByteArrayEntity(
+	//					payload.toString().getBytes("UTF8")));
+	//			Log.d("HTTP responded","execute request...");
+	//
+	//
+	//
+	//			HttpResponse response = client.execute(httppost);
+	//			HttpEntity responseEntity = response.getEntity();
+	//			Log.d("HTTP responded","reading response...");
+	//			String thisline="";
+	//			if (responseEntity != null) {
+	//				BufferedReader reader = new BufferedReader(
+	//						new InputStreamReader(responseEntity.getContent(),
+	//								"UTF-8"));
+	//
+	//				while( (thisline = reader.readLine()) != null)
+	//					result=result + thisline+"\n";
+	//				Log.d("HTTP responded","Http said:"+result);
+	//			} else {
+	//				Log.d("HTTP responded","nothing");
+	//			}
+	//
+	//		} catch (IllegalArgumentException e1) {
+	//			e1.printStackTrace();
+	//		} catch (IOException e2) {
+	//			e2.printStackTrace();
+	//		}
+	//		return result;
+	//
+	//
+	//
+	//
+	//
+	//
+	//	}
+	//	// onPostExecute displays the results of the AsyncTask.
+	//	@Override
+	//	protected void onPostExecute(String result) {
+	//		super.onPostExecute(result);
+	//		Toast.makeText(getBaseContext(), "Data Sent!", Toast.LENGTH_LONG).show();
+	//		debugText.setText("");
+	//		debugText.setText("Response:"+result);
+	//
+	//	}
+	//
+	//}
 
 }

@@ -12,10 +12,11 @@ import android.content.Context;
 import android.database.Cursor;
 import android.database.sqlite.SQLiteDatabase;
 import android.database.sqlite.SQLiteOpenHelper;
+import android.graphics.Point;
 import android.util.Log;
 
 public class MySQLiteHelper extends SQLiteOpenHelper{
-	private static final int DATABASE_VERSION = 2;
+	private static final int DATABASE_VERSION = 3;
 	private static final String DATABASE_NAME = "OpenNetworkDB";
 	Context myParentActivity;
 	
@@ -49,14 +50,13 @@ public class MySQLiteHelper extends SQLiteOpenHelper{
         Log.d("CreateTable", "points");
         String CREATE_GPSPOINT_TABLE= "CREATE TABLE points ( "+
                 "pbssid TEXT, " +
-        		"indx INTEGER, " +
                 "gpslocation TEXT UNIQUE ON CONFLICT IGNORE, "+
                 "wifistrength REAL, " +
         		"gpsaccuracy REAL, " +
                 "quality REAL, "+
                 "timestamp INTEGER," +
-                "synchronized INTEGER"+
-                "PRIMARY KEY ( pbssid, indx) )";
+                "synchronized INTEGER, "+
+                "PRIMARY KEY ( pbssid, timestamp) )";
         
         db.execSQL(CREATE_GPSPOINT_TABLE);
         
@@ -92,7 +92,6 @@ public class MySQLiteHelper extends SQLiteOpenHelper{
 	private static final String KEY_REACHABLE = "wwwreachable";
 	private static final String KEY_POINT_BSSID = "pbssid";
 	private static final String KEY_GPS_LOCATION = "gpslocation";
-	private static final String KEY_indx = "indx";
 	private static final String KEY_WIFISTRENGTH = "wifistrength";
 	private static final String KEY_GPSACCURACY = "gpsaccuracy";
 	private static final String KEY_QUALITY = "quality";
@@ -100,7 +99,7 @@ public class MySQLiteHelper extends SQLiteOpenHelper{
 	private static final String KEY_SYNC = "synchronized";
 	
 	private static final String[] COLUMNS_NETWORK = {KEY_BSSID,KEY_SSID, KEY_CITYNAME, KEY_APPROXIMATELOCATION, KEY_FREQUENCY, KEY_REACHABLE};
-	private static final String[] COLUMNS_POINT = {KEY_POINT_BSSID, KEY_indx, KEY_GPS_LOCATION, KEY_WIFISTRENGTH, KEY_GPSACCURACY, KEY_QUALITY, KEY_TIMESTAMP, KEY_SYNC};
+	private static final String[] COLUMNS_POINT = {KEY_POINT_BSSID, KEY_GPS_LOCATION, KEY_WIFISTRENGTH, KEY_GPSACCURACY, KEY_QUALITY, KEY_TIMESTAMP, KEY_SYNC};
 	
 	
 	
@@ -236,32 +235,12 @@ public class MySQLiteHelper extends SQLiteOpenHelper{
 		Log.d("addPoint", point.toString());
 		// 1. get reference to writable DB
         SQLiteDatabase db = this.getWritableDatabase();
-		int index = 0;
-		//if there are more than 30 points, first delete the worst point
-		String query= "SELECT count(*)" +
-				" FROM "+TABLE_POINTS+" " +
-				"WHERE "+KEY_POINT_BSSID+"= '"+point.getBSSID()+"'";
-		Cursor cursor = db.rawQuery(query, null);
-		if (cursor.moveToFirst())
-		{
-			index = cursor.getInt(0);
-			
-			if(index > 30)
-			{
-				Log.d("POINTS_OVERFLOW","remove worst point and continue");
-				int ix=findWorstPoint(point.getBSSID());
-				db.delete(TABLE_POINTS, KEY_BSSID+"="+point.getBSSID() +" AND "+KEY_indx+" = "+ ix , null);
-				Log.d("RemovedPoint","BSSID:"+point.getBSSID()+" index="+ix);
-			}
-		}
 		
-		index++; //point has index between 1 and 30
- 
-        
+
         // 2. create ContentValues to add key "column"/value
+        // add new point to database first
         ContentValues values = new ContentValues();
         values.put(KEY_POINT_BSSID, point.getBSSID()+""); // get BSSID
-        values.put(KEY_indx, index);
         values.put(KEY_GPS_LOCATION, point.getLocationAsString());
         values.put(KEY_WIFISTRENGTH, point.getWifiStrength()); //
         values.put(KEY_GPSACCURACY, point.getGpsAccuracy());
@@ -273,7 +252,20 @@ public class MySQLiteHelper extends SQLiteOpenHelper{
                 null, //nullColumnHack
                 values); // key/value -> keys = column names/ values = column values
         
-        // 4. close
+        // 4. check if database has more than 30 entries for this network, and delete point with worst quality
+        
+
+		//if there are more than 30 points, sort them by descending quality and delete bad ones
+		String RETAIN_ONLY_BEST_POINTS= "DELETE FROM "+TABLE_POINTS +" "+
+				" WHERE "+KEY_BSSID+" = "+point.getBSSID() +" AND "+KEY_QUALITY+" NOT IN " +
+				"(SELECT "+KEY_QUALITY+" FROM "+TABLE_POINTS+" "+
+				" WHERE "+KEY_BSSID+" = "+point.getBSSID()+" "+
+				"ORDER BY "+KEY_QUALITY+" DESC LIMIT 30)";
+
+		db.execSQL(RETAIN_ONLY_BEST_POINTS, null);
+		
+
+        // 5. close
         db.close(); 
 	}
 	
@@ -439,7 +431,7 @@ public class MySQLiteHelper extends SQLiteOpenHelper{
 	
 	public int findWorstPoint(String bssid){
 		SQLiteDatabase db = this.getWritableDatabase();
-		String query= "SELECT "+KEY_POINT_BSSID+", "+KEY_indx+ 
+		String query= "SELECT "+KEY_POINT_BSSID+", "+KEY_TIMESTAMP+ 
 				" FROM "+TABLE_POINTS+" " +
 				"WHERE "+KEY_POINT_BSSID+"= '"+bssid+"'" +
 				"ORDER BY " +KEY_QUALITY + " ASC";
@@ -475,6 +467,67 @@ public class MySQLiteHelper extends SQLiteOpenHelper{
 			 return true;
 		 //populate table
 		
+	}
+
+
+	public List<NetworkPoint> getAllPoints() {
+		List<NetworkPoint> points = new ArrayList<NetworkPoint>();
+		// 1. build query
+		String query = "SELECT * FROM "+TABLE_POINTS;
+		
+		// 2. get reference to writable DB
+	       SQLiteDatabase db = this.getWritableDatabase();
+	       Cursor cursor = db.rawQuery(query, null);
+		
+	       
+	       
+
+//	0       "pbssid TEXT, " +
+//  1         "gpslocation TEXT UNIQUE ON CONFLICT IGNORE, "+
+//  2         "wifistrength REAL, " +
+//  3 		"gpsaccuracy REAL, " +
+//  4         "quality REAL, "+
+//  5         "timestamp INTEGER," +
+//  6         "synchronized INTEGER"+
+	       
+	       
+	    // 3. go over each row, build network and add it to list
+	       NetworkPoint point = null;
+	       String pbssid,gpslocation;
+	       double wifistrength,gpsaccuracy,quality;
+	       
+	       double lat,lng;
+	       int timestamp,synchronised;
+	       LatLng cGpsLocation=new LatLng(0, 0);
+	       if (cursor.moveToFirst()) {
+	           do {
+	        	   pbssid=cursor.getString(0);
+	        	   gpslocation=cursor.getString(1);
+	        	   wifistrength=cursor.getDouble(2);
+	        	   gpsaccuracy = cursor.getDouble(3);
+	        	   quality = cursor.getDouble(4);
+	        	   timestamp= cursor.getInt(5);
+	        	   synchronised = cursor.getInt(6);
+	        	   
+	        	   lat=Double.parseDouble(gpslocation.split(";")[0]);
+	        	   lng=Double.parseDouble(gpslocation.split(";")[1]);
+	        	   cGpsLocation=new LatLng(lat, lng);
+	        	   
+	        	  
+	        	   
+	               point = new NetworkPoint(pbssid, cGpsLocation, wifistrength, gpsaccuracy, timestamp);
+	               
+	 
+	               // Add to network list
+	               points.add(point);
+	           } while (cursor.moveToNext());
+	       }
+	 
+	       //Log.d("getNetworks()", points.toString());
+	       
+	       db.close();
+	       // return networks
+	       return points;
 	}
 	
 }

@@ -28,7 +28,7 @@ public class ServerExchangeHelper {
 	}
 	
 	
-	public JSONObject prepareJSON(ArrayList<OpenNetwork> newNetworks){
+	public JSONObject prepareJSONnetworks(ArrayList<OpenNetwork> newNetworks){
 		
 		//connect to server, create json and send it
 		
@@ -40,6 +40,7 @@ public class ServerExchangeHelper {
 		for(OpenNetwork ntwk:newNetworks)
 		{
 			networkN = new JSONObject();
+			
 			try {
 				networkN.put("bssid", ntwk.getBSSID());
 				networkN.put("ssid",ntwk.getSSID());
@@ -69,6 +70,50 @@ public class ServerExchangeHelper {
 		return networksObject;
 	}
 
+	
+public JSONObject prepareJSONpoints(ArrayList<NetworkPoint> newPoints){
+		
+		//connect to server, create json and send it
+		
+		
+		JSONArray pointsArray = new JSONArray();
+		
+		JSONObject pointN;
+
+		for(NetworkPoint pnt:newPoints)
+		{
+			pointN = new JSONObject();
+			
+			try {
+				pointN.put("pbssid", pnt.getBSSID());
+				pointN.put("gpscoordinates",pnt.getLocationAsString());
+				pointN.put("strength", pnt.getWifiStrength());
+				pointN.put("accuracy", pnt.getGpsAccuracy());
+				pointN.put("quality", pnt.getQuality());
+				pointN.put("timestamp", pnt.getTimestamp());
+			} catch (JSONException e) {
+				// TODO Auto-generated catch block
+				e.printStackTrace();
+			}
+			pointsArray.put(pointN);
+		}
+		
+		
+		JSONObject pointsObject = new JSONObject();
+		
+		try {
+			pointsObject.put("points", pointsArray);
+		} catch (JSONException e) {
+			// TODO Auto-generated catch block
+			e.printStackTrace();
+		}
+		
+		 
+		
+		return pointsObject;
+	}
+	
+	
 	public static String convertInputStreamToString(InputStream inputStream) throws IOException{
         BufferedReader bufferedReader = new BufferedReader( new InputStreamReader(inputStream));
         String line = "";
