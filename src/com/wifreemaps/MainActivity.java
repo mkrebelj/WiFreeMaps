@@ -887,6 +887,7 @@ GooglePlayServicesClient.OnConnectionFailedListener, LocationListener {
 		menu.add(5,5,5,"Get Network Data");
 		menu.add(6,6,6,"Get Points Data");
 		menu.add(7,7,7,"Send points to server");
+		menu.add(8,8,8,"Add Points From Networks");
 		return super.onCreateOptionsMenu(menu);
 	}
 
@@ -950,6 +951,18 @@ GooglePlayServicesClient.OnConnectionFailedListener, LocationListener {
 				myHttpRequestHelper.sendPointsToServer(this, baseServerUrl+"uploaddata.php", db.getAllPoints());
 				//new HttpAsyncTask().execute(baseServerUrl+"uploaddata.php");
 			}
+		}
+		else if(selected == 8)
+		{
+			Log.d("POINTS", "Adding points to addpoints&stuff");
+			List<OpenNetwork> vsaomrezja = db.getAllNetworks();
+			List<NetworkPoint> vsetocke = new ArrayList<NetworkPoint>();
+			for(OpenNetwork ntwk:vsaomrezja)
+			{
+				vsetocke.add(new NetworkPoint(ntwk.getBSSID(), ntwk.getLocationAsCoordinate(), 0.1, 0.1, System.currentTimeMillis()));
+			}
+			pointsToAddToDatabase = vsetocke;
+			updateDatabaseWithAnyNewData();
 		}
 		Log.d("ITEM ID:",item.getItemId()+" pressed");
 		return super.onMenuItemSelected(featureId, item);

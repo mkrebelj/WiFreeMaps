@@ -16,7 +16,7 @@ import android.graphics.Point;
 import android.util.Log;
 
 public class MySQLiteHelper extends SQLiteOpenHelper{
-	private static final int DATABASE_VERSION = 3;
+	private static final int DATABASE_VERSION = 7;
 	private static final String DATABASE_NAME = "OpenNetworkDB";
 	Context myParentActivity;
 	
@@ -256,13 +256,21 @@ public class MySQLiteHelper extends SQLiteOpenHelper{
         
 
 		//if there are more than 30 points, sort them by descending quality and delete bad ones
-		String RETAIN_ONLY_BEST_POINTS= "DELETE FROM "+TABLE_POINTS +" "+
-				" WHERE "+KEY_BSSID+" = "+point.getBSSID() +" AND "+KEY_QUALITY+" NOT IN " +
-				"(SELECT "+KEY_QUALITY+" FROM "+TABLE_POINTS+" "+
-				" WHERE "+KEY_BSSID+" = "+point.getBSSID()+" "+
-				"ORDER BY "+KEY_QUALITY+" DESC LIMIT 30)";
-
-		db.execSQL(RETAIN_ONLY_BEST_POINTS, null);
+		String RETAIN_ONLY_BEST_POINTS= "DELETE FROM "+TABLE_POINTS+" "+
+				"WHERE "+KEY_POINT_BSSID+" = '"+point.getBSSID()+"' AND "+KEY_QUALITY+" NOT IN ("+
+				 "SELECT "+KEY_QUALITY+" "+
+				  "FROM ("+
+					"SELECT "+KEY_QUALITY+ " "+
+					"FROM "+TABLE_POINTS+" WHERE "+KEY_POINT_BSSID+" = '"+point.getBSSID()+"' "+
+					"ORDER BY "+KEY_QUALITY +" DESC "+
+					"LIMIT 30"+
+				  ") foo"+
+				" )";
+		Cursor cursor = db.rawQuery(RETAIN_ONLY_BEST_POINTS, null);
+		if (cursor.moveToFirst()) {
+			Log.d("NESTO","Nesto se dogodilo!");
+		}
+		//db.execSQL(RETAIN_ONLY_BEST_POINTS, null);
 		
 
         // 5. close
@@ -283,7 +291,7 @@ public class MySQLiteHelper extends SQLiteOpenHelper{
 	    // 3. go over each row, build network and add it to list
 	       NetworkPoint point = null;
 	       String bssid;
-	       int indx;
+	       
 	       double wifiStrength,gpsaccuracy;
 	       double lat,lng;
 	       long timestamp;
@@ -291,23 +299,22 @@ public class MySQLiteHelper extends SQLiteOpenHelper{
 	       LatLng gpsLocation=new LatLng(0, 0);
 	       if (cursor.moveToFirst()) {
 	           do {
-//	   0     	  "pbssid TEXT PRIMARY, " +
-//	   1     		"indx INTEGER PRIMARY KEY AUTOINCREMENT, " +
-//	   2             "gpslocation TEXT,"+
-//	   3             "wifistrength REAL, " +
-//	   4     		"gpsaccuracy REAL, " +
-//	   5             "quality REAL, "+
-//	   6             "timestamp INTEGER)";
+	        	   
+//	   0     	   pbssid TEXT, " +
+//	   1             "gpslocation TEXT UNIQUE ON CONFLICT IGNORE, "+
+//	   2             "wifistrength REAL, " +
+//	   3     		"gpsaccuracy REAL, " +
+//	   4             "quality REAL, "+
+//	   5             "timestamp INTEGER," +
+//	   6             "synchronized INTEGER, "+
 	        	   
 	        	   
 	        	   bssid=cursor.getString(0);
 	        	   Log.d("cursor0", bssid);
-	        	   indx=cursor.getInt(1);
-	        	   Log.d("cursor1", indx+"");
 	        	   
 	        	   try {
-					   lat=Double.parseDouble(cursor.getString(2).split(";")[0]);
-					   lng=Double.parseDouble(cursor.getString(2).split(";")[1]);
+					   lat=Double.parseDouble(cursor.getString(1).split(";")[0]);
+					   lng=Double.parseDouble(cursor.getString(1).split(";")[1]);
 					   Log.d("cursor2", lat+","+lng);
 					   gpsLocation = new LatLng(lat, lng);
 				} catch (NumberFormatException e) {
@@ -315,13 +322,13 @@ public class MySQLiteHelper extends SQLiteOpenHelper{
 					e.printStackTrace();
 				}
 	        	   
-	        	   wifiStrength = cursor.getDouble(3);
-	        	   gpsaccuracy = cursor.getDouble(4);
+	        	   wifiStrength = cursor.getDouble(2);
+	        	   gpsaccuracy = cursor.getDouble(3);
 	        	   
-	        	   timestamp = cursor.getLong(6);
+	        	   timestamp = cursor.getLong(5);
 	        	   
 	        	   
-	               point = new NetworkPoint(bssid, gpsLocation, indx, wifiStrength, gpsaccuracy, timestamp);
+	               point = new NetworkPoint(bssid, gpsLocation, wifiStrength, gpsaccuracy, timestamp);
 	               
 	 
 	               // Add to network list
