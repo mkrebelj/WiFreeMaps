@@ -87,6 +87,7 @@ import android.os.AsyncTask;
 import android.os.Bundle;
 import android.os.Handler;
 import android.os.Looper;
+import android.os.PowerManager;
 import android.preference.PreferenceManager;
 
 
@@ -176,8 +177,11 @@ GooglePlayServicesClient.OnConnectionFailedListener, LocationListener {
 	private long lastRefreshTime;
 	private long lastMapRefresh;
 	private boolean goToSleep=false;
+	
+	
 	private boolean allowActiveScan;
-
+	private PowerManager.WakeLock wakeLock ;
+	
 	double lat1,lon1;
 
 	//NOVO
@@ -195,7 +199,10 @@ GooglePlayServicesClient.OnConnectionFailedListener, LocationListener {
 
 
 	//Server url
-	private String baseServerUrl="http://212.235.208.12:31173/webservice/";
+	
+	//@home
+	private String baseServerUrl="http://188.230.240.97:31173/wifreemaps/";
+//	private String baseServerUrl="http://212.235.208.12:31173/webservice/";
 	private HttpRequestHelper myHttpRequestHelper = new HttpRequestHelper();
 
 	/**
@@ -239,6 +246,12 @@ GooglePlayServicesClient.OnConnectionFailedListener, LocationListener {
 	protected void onCreate(Bundle savedInstanceState) {
 		super.onCreate(savedInstanceState);
 
+		//wake lock if user wants to collect data even when app is in background.
+		 PowerManager pm = (PowerManager) getSystemService(Context.POWER_SERVICE);
+		 wakeLock = pm.newWakeLock( PowerManager.PARTIAL_WAKE_LOCK, "ActiveScanWakeLock");
+		
+		
+		
 		setContentView(R.layout.activity_main); 
 		mHandler = new Handler();
 		mLocationClient = new LocationClient(this, this, this);
@@ -417,9 +430,12 @@ GooglePlayServicesClient.OnConnectionFailedListener, LocationListener {
 		allowActiveScan = sharedPrefs.getBoolean("allowActiveScan", true);
 		if(!allowActiveScan)
 		{
+			wakeLock.release();
 			Toast.makeText(this, "Active scan not allowed", Toast.LENGTH_SHORT).show();
 		}
 		else{
+			
+			wakeLock.acquire();
 			Toast.makeText(this, "Active scan allowed", Toast.LENGTH_SHORT).show();
 		}
 
@@ -906,8 +922,8 @@ GooglePlayServicesClient.OnConnectionFailedListener, LocationListener {
 		else if(selected == 2)
 		{
 			//add some dummy data to database
-			int newDummyNetworkCount = addDummyData();
-			Toast.makeText(this, "Added "+newDummyNetworkCount+ " dummy points to database", Toast.LENGTH_SHORT).show();
+			
+			Toast.makeText(this, "NOTHING", Toast.LENGTH_SHORT).show();
 
 		}
 		else if(selected == 3)
@@ -1117,6 +1133,7 @@ GooglePlayServicesClient.OnConnectionFailedListener, LocationListener {
 		currentNetworks.clear();
 		if(goToSleep)
 		{
+			wakeLock.release();
 			mLocationClient.disconnect();
 			Log.d("sleep","mlocationclient disconnected");
 		}
@@ -1499,91 +1516,7 @@ GooglePlayServicesClient.OnConnectionFailedListener, LocationListener {
 	}
 
 
-	private int addDummyData(){
-
-		//add random number of networks to working set
-		//works only with mode 2
-
-		if(DISPLAY_MODE == 2){
-
-			int howManyToAdd= (int)(Math.random()*50)+1;
-
-			String bssid,ssid,city;
-			int freq,alive,newpoints;
-			float startLat,startLng,latitude,longitude,accuracy,signal;
-
-			LatLngBounds findDisplayCenter = mMap.getProjection().getVisibleRegion().latLngBounds;;
-
-
-
-			LatLng approxCoordinates;
-			LatLng ntwkPntGPS;
-
-			OpenNetwork newNetwork;
-			NetworkPoint newPoint;
-
-			for(int i = 0; i < howManyToAdd; i++)
-			{
-				//for each add from 5 to 15 new points
-				bssid="bssid"+i+"sample";
-				ssid="network"+i+"name";
-				freq= i%3;//(int)(Math.random()*14);
-				alive=( i%4==3 ? 0:1 );
-
-
-
-
-				startLat = (float)findDisplayCenter.getCenter().latitude +(float)(Math.random()*0.002*howManyToAdd);
-				startLng =(float)findDisplayCenter.getCenter().longitude +(float)(Math.random()*0.002*howManyToAdd);
-				approxCoordinates = new LatLng(startLat, startLng);
-
-
-
-				city ="fake ljubljana";
-
-				if(isInternetConnectionAvailable())
-				{
-					city=returnResultFromGeocoder(approxCoordinates);
-				}
-
-				//signal -35dbm(and higher) = 100%; -95dbm = 1%, linear
-				//accuracy is location in meters, 68% confidence that location is inside circle with r as accuracy: 
-				//accuracy of 4 means that location is roughly inside 8 meter of diameter
-
-				newNetwork=new OpenNetwork(bssid, ssid, city, freq, approxCoordinates, alive);
-				//create network first
-				//db.addNetwork(newNetwork);
-				currentNetworks.add(newNetwork);
-
-				newpoints=(int)(Math.random()*11)+5;
-
-				//create point
-
-
-				for (int j = 0;j<newpoints;j++){
-
-					latitude = startLat + (float)(Math.random()*0.0001);
-					longitude = startLng +  +(float)(Math.random()*0.0001);
-					ntwkPntGPS = new LatLng(latitude, longitude);
-					accuracy = (int)(Math.random()*10+1);
-					signal = (float) (Math.random());
-					newPoint = new NetworkPoint(bssid, ntwkPntGPS, signal, accuracy, System.currentTimeMillis());
-					allAvailableNetworkPoints.add(newPoint);
-					currentNetworkPointsForHeatmaps.add(newPoint.getLocation());
-					//db.addNetworkPoint(newPoint);
-
-				}
-
-			}
-			newPointDetected = true;
-			return howManyToAdd;
-
-		}
-
-		return 0;
-
-	}
-
+	
 	private void updateDatabaseWithAnyNewData()
 	{
 		for(NetworkPoint pnt : pointsToAddToDatabase)
@@ -1783,268 +1716,115 @@ GooglePlayServicesClient.OnConnectionFailedListener, LocationListener {
 
 
 
-	//server exchange
-	private String sendDataToServer(String url,JSONObject networksObject) {
-		// TODO Auto-generated method stub
-		String result ="";
-		InputStream inputStream = null;
-
-
-		try {
-
-			// 1. create HttpClient
-			HttpClient httpclient = new DefaultHttpClient();
-			Log.d("InputStream", "create http client");
-			// 2. make POST request to the given URL
-			HttpPost httpPost = new HttpPost(url);
-			Log.d("InputStream", "makepost");
-			String json = "";
-
-			// 3. add jsonObject
-			JSONObject test =  new JSONObject();
-			try {
-				test.put("bssid", "1");
-				test.put("ssid","2");
-				test.put("cityname", "3");
-				test.put("approxgps", "4");
-				test.put("frequency", "3");
-				test.put("reachable", "3");
-			} catch (JSONException e) {
-				// TODO Auto-generated catch block
-				e.printStackTrace();
-			}
-
-
-			json = networksObject.toString();
-			// 4. convert JSONObject to JSON to String
-			//json = networksObject.toString();
-			//            json = test.toString();
-			//			Log.d("InputStream", "converted json to string");
-			// 
-			//
-			//            // 5. set json to StringEntity
-			//            StringEntity se = new StringEntity(json);
-			//            Log.d("InputStream", "string entity");
-			// 
-			//            // 6. set httpPost Entity
-			//            httpPost.setEntity(se);
-			//            Log.d("InputStream", "set entity:"+json);
-			// 
-			//            // 7. Set some headers to inform server about the type of the content   
-			//            httpPost.setHeader("Accept", "application/json");
-			//            httpPost.setHeader("Content-type", "application/json");
-			//           
-			//            Log.d("InputStream", "headers set");
-			// 
-			//            // 8. Execute POST request to the given URL
-			//            
-			//            ResponseHandler responseHandler = new BasicResponseHandler();
-			//            
-			//            HttpResponse response = httpclient.execute(httpPost, responseHandler);
-			//            
-			//            //HttpResponse httpResponse = httpclient.execute(httpPost);
-			//            Log.d("InputStream", "executed post request");
-			// 
-			//            // 9. receive response as inputStream
-			//            inputStream = response.getEntity().getContent();
-			//            Log.d("InputStream", "receieved input stream");
-			// 
-			//            // 10. convert inputstream to string
-			//            if(inputStream != null)
-			//                result = MyServerExchangeHelper.convertInputStreamToString(inputStream);
-			//            else
-			//                result = "Did not work!";
-
-
-
-			//url with the post data
-			HttpPost httpost = new HttpPost(url);
-
-			//convert parameters into JSON object
-			//            JSONObject holder = test;
-
-			//passes the results to a string builder/entity
-			StringEntity se = new StringEntity(json);
-
-			//sets the post request as the resulting string
-			httpost.setEntity(se);
-			//sets a request header so the page receving the request
-			//will know what to do with it
-			httpost.setHeader("Accept", "application/json");
-			httpost.setHeader("Content-type", "application/json");
-
-			//Handles what is returned from the page 
-			ResponseHandler responseHandler = new BasicResponseHandler();
-			String result1 = httpclient.execute(httpost, responseHandler);
-			debugText.setText(result1);
-			return result1;
-
-		} catch (Exception e) {
-			e.printStackTrace();
-
-			//        		Log.d("InputStream", e.getMessage());
-		}
-
-
-		return result;
-	}
-
-	//	private class HttpAsyncTask extends AsyncTask<String, Void, String> {
-	//	@Override
-	//	protected String doInBackground(String... urls) {
-	//
-	//
-	//		HttpParams httpParameters = new BasicHttpParams();
-	//		// set the connection timeout and socket timeout parameters (milliseconds)
-	//		HttpConnectionParams.setConnectionTimeout(httpParameters, 5000);
-	//		HttpConnectionParams.setSoTimeout(httpParameters, 5000);
-	//
-	//		HttpClient client = new DefaultHttpClient(httpParameters);
-	//		Log.d("HTTP responded","starting http request...");
-	//
-	//		String result = null;
-	//		try {
-	//			// Add your data
-	//			Log.d("HTTP responded","adding data...");
-	//			ArrayList<OpenNetwork> networksToSend= new ArrayList<OpenNetwork>();
-	//			for(OpenNetwork na:currentNetworks)
-	//			{
-	//				networksToSend.add(na);
-	//			}
-	//			JSONObject payload = serverHelper.prepareJSON(networksToSend);
-	//
-	//
-	//
-	//
-	//			HttpPost httppost = new HttpPost( urls[0]);
-	//			httppost.setHeader("Accept", "application/json");
-	//			httppost.setHeader("Content-type", "application/json");
-	//			httppost.setEntity(new ByteArrayEntity(
-	//					payload.toString().getBytes("UTF8")));
-	//			Log.d("HTTP responded","execute request...");
-	//
-	//
-	//
-	//			HttpResponse response = client.execute(httppost);
-	//			HttpEntity responseEntity = response.getEntity();
-	//			Log.d("HTTP responded","reading response...");
-	//			String thisline="";
-	//			if (responseEntity != null) {
-	//				BufferedReader reader = new BufferedReader(
-	//						new InputStreamReader(responseEntity.getContent(),
-	//								"UTF-8"));
-	//
-	//				while( (thisline = reader.readLine()) != null)
-	//					result=result + thisline+"\n";
-	//				Log.d("HTTP responded","Http said:"+result);
-	//			} else {
-	//				Log.d("HTTP responded","nothing");
-	//			}
-	//
-	//		} catch (IllegalArgumentException e1) {
-	//			e1.printStackTrace();
-	//		} catch (IOException e2) {
-	//			e2.printStackTrace();
-	//		}
-	//		return result;
-	//
-	//
-	//
-	//
-	//
-	//
-	//	}
-	//	// onPostExecute displays the results of the AsyncTask.
-	//	@Override
-	//	protected void onPostExecute(String result) {
-	//		super.onPostExecute(result);
-	//		Toast.makeText(getBaseContext(), "Data Sent!", Toast.LENGTH_LONG).show();
-	//		debugText.setText("");
-	//		debugText.setText("Response:"+result);
-	//
-	//	}
-	//
-	//}
+//	//server exchange
+//	private String sendDataToServer(String url,JSONObject networksObject) {
+//		// TODO Auto-generated method stub
+//		String result ="";
+//		InputStream inputStream = null;
+//
+//
+//		try {
+//
+//			// 1. create HttpClient
+//			HttpClient httpclient = new DefaultHttpClient();
+//			Log.d("InputStream", "create http client");
+//			// 2. make POST request to the given URL
+//			HttpPost httpPost = new HttpPost(url);
+//			Log.d("InputStream", "makepost");
+//			String json = "";
+//
+//			// 3. add jsonObject
+//			JSONObject test =  new JSONObject();
+//			try {
+//				test.put("bssid", "1");
+//				test.put("ssid","2");
+//				test.put("cityname", "3");
+//				test.put("approxgps", "4");
+//				test.put("frequency", "3");
+//				test.put("reachable", "3");
+//			} catch (JSONException e) {
+//				// TODO Auto-generated catch block
+//				e.printStackTrace();
+//			}
+//
+//
+//			json = networksObject.toString();
+//			// 4. convert JSONObject to JSON to String
+//			//json = networksObject.toString();
+//			//            json = test.toString();
+//			//			Log.d("InputStream", "converted json to string");
+//			// 
+//			//
+//			//            // 5. set json to StringEntity
+//			//            StringEntity se = new StringEntity(json);
+//			//            Log.d("InputStream", "string entity");
+//			// 
+//			//            // 6. set httpPost Entity
+//			//            httpPost.setEntity(se);
+//			//            Log.d("InputStream", "set entity:"+json);
+//			// 
+//			//            // 7. Set some headers to inform server about the type of the content   
+//			//            httpPost.setHeader("Accept", "application/json");
+//			//            httpPost.setHeader("Content-type", "application/json");
+//			//           
+//			//            Log.d("InputStream", "headers set");
+//			// 
+//			//            // 8. Execute POST request to the given URL
+//			//            
+//			//            ResponseHandler responseHandler = new BasicResponseHandler();
+//			//            
+//			//            HttpResponse response = httpclient.execute(httpPost, responseHandler);
+//			//            
+//			//            //HttpResponse httpResponse = httpclient.execute(httpPost);
+//			//            Log.d("InputStream", "executed post request");
+//			// 
+//			//            // 9. receive response as inputStream
+//			//            inputStream = response.getEntity().getContent();
+//			//            Log.d("InputStream", "receieved input stream");
+//			// 
+//			//            // 10. convert inputstream to string
+//			//            if(inputStream != null)
+//			//                result = MyServerExchangeHelper.convertInputStreamToString(inputStream);
+//			//            else
+//			//                result = "Did not work!";
+//
+//
+//
+//			//url with the post data
+//			HttpPost httpost = new HttpPost(url);
+//
+//			//convert parameters into JSON object
+//			//            JSONObject holder = test;
+//
+//			//passes the results to a string builder/entity
+//			StringEntity se = new StringEntity(json);
+//
+//			//sets the post request as the resulting string
+//			httpost.setEntity(se);
+//			//sets a request header so the page receving the request
+//			//will know what to do with it
+//			httpost.setHeader("Accept", "application/json");
+//			httpost.setHeader("Content-type", "application/json");
+//
+//			//Handles what is returned from the page 
+//			ResponseHandler responseHandler = new BasicResponseHandler();
+//			String result1 = httpclient.execute(httpost, responseHandler);
+//			debugText.setText(result1);
+//			return result1;
+//
+//		} catch (Exception e) {
+//			e.printStackTrace();
+//
+//			//        		Log.d("InputStream", e.getMessage());
+//		}
+//
+//
+//		return result;
+//	}
 
 
 
-	//private class HttpAsyncTaskGETNetworks extends AsyncTask<String, Void, String> {
-	//	@Override
-	//	protected String doInBackground(String... urls) {
-	//
-	//
-	//		HttpParams httpParameters = new BasicHttpParams();
-	//		// set the connection timeout and socket timeout parameters (milliseconds)
-	//		HttpConnectionParams.setConnectionTimeout(httpParameters, 5000);
-	//		HttpConnectionParams.setSoTimeout(httpParameters, 5000);
-	//
-	//		HttpClient client = new DefaultHttpClient(httpParameters);
-	//		Log.d("HTTP responded","starting http request...");
-	//
-	//		String result = null;
-	//		try {
-	//			// Add your data
-	//			Log.d("HTTP responded","request mode: networks");
-	//
-	//			JSONObject payload = new JSONObject();
-	//			try {
-	//
-	//				payload.put("mode", "networks");
-	//
-	//			} catch (JSONException e) {
-	//				// TODO Auto-generated catch block
-	//				e.printStackTrace();
-	//			}
-	//
-	//
-	//			HttpPost httppost = new HttpPost( urls[0]);
-	//			httppost.setHeader("Accept", "application/json");
-	//			httppost.setHeader("Content-type", "application/json");
-	//			httppost.setEntity(new ByteArrayEntity(
-	//					payload.toString().getBytes("UTF8")));
-	//			Log.d("HTTP responded","execute request...");
-	//
-	//
-	//
-	//			HttpResponse response = client.execute(httppost);
-	//			HttpEntity responseEntity = response.getEntity();
-	//			Log.d("HTTP responded","reading response...");
-	//			String thisline="";
-	//			if (responseEntity != null) {
-	//				BufferedReader reader = new BufferedReader(
-	//						new InputStreamReader(responseEntity.getContent(),
-	//								"UTF-8"));
-	//
-	//				while( (thisline = reader.readLine()) != null)
-	//					result=result + thisline+"\n";
-	//				Log.d("HTTP responded","Http said:"+result);
-	//			} else {
-	//				Log.d("HTTP responded","nothing");
-	//			}
-	//
-	//		} catch (IllegalArgumentException e1) {
-	//			e1.printStackTrace();
-	//		} catch (IOException e2) {
-	//			e2.printStackTrace();
-	//		}
-	//		return result;
-	//
-	//
-	//
-	//
-	//
-	//
-	//	}
-	//	// onPostExecute displays the results of the AsyncTask.
-	//	@Override
-	//	protected void onPostExecute(String result) {
-	//		super.onPostExecute(result);
-	//		Toast.makeText(getBaseContext(), "Data Sent!", Toast.LENGTH_LONG).show();
-	//		debugText.setText("");
-	//		debugText.setText("Response:"+result);
-	//
-	//	}
-	//
-	//}
+
+	
 
 }
